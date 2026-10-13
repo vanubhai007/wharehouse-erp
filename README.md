@@ -22,7 +22,8 @@ Costing and Asset Resale Management.
 └── .gitignore
 ```
 
-See `backend/README` section below and inline code comments for details on each module.
+See inline code comments in each module (`backend/controllers/`, `backend/services/`,
+`backend/models/`) for details on individual business rules.
 
 ---
 
@@ -30,28 +31,40 @@ See `backend/README` section below and inline code comments for details on each 
 
 ### Prerequisites
 
-1. **Node.js 18+** - download from https://nodejs.org (LTS version) and install. Verify with:
+1. **Git for Windows** - download from https://git-scm.com/download/win and install with default
+   options.
+2. **Node.js 18+** - download from https://nodejs.org (LTS version) and install. Verify both tools
+   installed correctly by opening **Command Prompt** (press Start, type `cmd`, press Enter) and
+   running:
    ```
+   git --version
    node -v
    npm -v
    ```
-2. **A MongoDB Atlas account** (free tier is enough) - https://www.mongodb.com/cloud/atlas/register
+   Each should print a version number, not an error.
+3. **A MongoDB Atlas account** (free tier is enough) - https://www.mongodb.com/cloud/atlas/register
    - Create a free cluster.
    - Create a database user (username/password).
    - Under "Network Access", add your current IP (or `0.0.0.0/0` for easy local development).
    - Get the connection string ("Connect" → "Drivers") - it looks like:
      `mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority`
-3. **A Cloudinary account** (free tier) - https://cloudinary.com/users/register/free
+4. **A Cloudinary account** (free tier) - https://cloudinary.com/users/register/free
    - From the Dashboard, copy your **Cloud Name**, **API Key** and **API Secret**.
-4. (Optional, can be skipped for local testing) An email SMTP account and a WhatsApp Business API
+5. (Optional, can be skipped for local testing) An email SMTP account and a WhatsApp Business API
    provider. Without these, the app runs in **demo mode** for notifications (see §7).
 
 ### Step-by-step setup
 
-Open **Command Prompt** or **PowerShell** in the project folder.
+Open **Command Prompt** (Start → type `cmd` → Enter). Choose a folder to work in, e.g. your Documents
+folder, then get the code and install everything:
 
 ```bat
-:: 1. Install dependencies for both apps
+:: 0. Get the code (replace with your repo URL if different) and enter the project folder
+cd %USERPROFILE%\Documents
+git clone https://github.com/vanubhai007/wharehouse-erp.git
+cd wharehouse-erp
+
+:: 1. Install dependencies for both apps (this takes a few minutes the first time)
 npm run install:all
 
 :: 2. Configure the backend
@@ -72,15 +85,25 @@ cd ..
 
 :: 4. (Optional) Seed demo data - creates one user per role and sample records
 npm run seed
-
-:: 5. Start the backend (new terminal window)
-npm run dev:backend
-
-:: 6. Start the frontend (another new terminal window)
-npm run dev:frontend
 ```
 
-Open **http://localhost:5173** in your browser.
+Now start the two servers - **each needs its own Command Prompt window, left running**:
+
+```bat
+:: Terminal window 1 (stay in the project's root folder, e.g. wharehouse-erp)
+npm run dev:backend
+:: Wait for: "HR Warehouse ERP API listening on port 5000"
+```
+
+```bat
+:: Terminal window 2 - open a NEW Command Prompt window, cd back into the same project folder first
+cd %USERPROFILE%\Documents\wharehouse-erp
+npm run dev:frontend
+:: Wait for: "Local:   http://localhost:5173/"
+```
+
+Open **http://localhost:5173** in your browser. Leave both Command Prompt windows open while you use
+the app; closing either one stops that server.
 
 - If you ran the seed script, log in with `admin@hrwarehouse.com` / `ChangeMe123!` (see the seed script
   output for the other role logins).
@@ -95,12 +118,15 @@ npm test
 ```
 
 This runs two kinds of tests:
-- **Pure unit tests** (rental pro-ration date-boundary math, item status-transition rules) - no
-  database required, always run.
+- **Pure unit/functional tests** (no database required, always run): rental pro-ration date-boundary
+  math, item status-transition rules, real PDF generation for invoices/receipts/dispatch
+  notes/inventory reports (asserts actual `%PDF` output), and the upload-guard behavior when Cloudinary
+  isn't configured. 22 tests across 4 suites.
 - **Integration tests** (auth flow, full sale→approval→invoice→dispatch lifecycle) - these spin up an
   in-memory MongoDB via `mongodb-memory-server`, which downloads a small `mongod` binary the first time
   it runs. This requires outbound internet access to `fastdl.mongodb.org`. If your network blocks that
   host, these two suites will fail to start with a clear message explaining why - it is not a code bug.
+  See §10 for the actual results observed while building this project.
 
 ---
 
@@ -254,18 +280,37 @@ Or simply use `/setup` on the deployed frontend to create the first Admin accoun
 Built honestly, not just claimed:
 
 - **Live integration test run:** the two integration-test suites (`tests/auth.test.js`,
-  `tests/salesLifecycle.test.js`) could not be executed inside the sandboxed session this project was
-  built in, because that session's network policy blocks the MongoDB binary download host. The code
-  has been reviewed, and the 16 pure-logic unit tests (rental date-boundary math, status-transition
-  rules) did run and pass. Run `npm test` in a normal environment or CI to execute the full suite.
+  `tests/salesLifecycle.test.js` - 9 tests covering login/role permissions, the full
+  sale→approval→invoice→dispatch lifecycle, and duplicate-invoice prevention) could not be executed
+  inside the sandboxed session this project was built in, because that session's network policy
+  blocks `fastdl.mongodb.org`, the host `mongodb-memory-server` downloads its test database binary
+  from. Actual output seen in that session:
+  ```
+  Test Suites: 2 failed, 4 passed, 6 total
+  Tests:       9 failed, 22 passed, 31 total
+  ```
+  All 9 failures are the identical "Could not start the in-memory MongoDB test server" error, not a
+  test assertion failure - the code inside those two suites was never reached. The other 4 suites (22
+  tests: rental pro-ration date-boundary math, item status-transition rules, real PDF generation
+  verified by checking actual `%PDF`/`%%EOF` bytes, and the no-Cloudinary upload guard) ran for real
+  and passed. Run `npm test` in a normal environment or CI (or anywhere `fastdl.mongodb.org` is
+  reachable) to execute the full suite including the two integration suites.
+- **MongoDB Atlas connectivity, real file uploads to Cloudinary, and the full browser login/inventory
+  UI flow were not exercised end-to-end** in the build session, because no real Atlas cluster or
+  Cloudinary account credentials were available there and the sandbox's network policy prevented
+  starting a local test database (above). What *was* verified in that session: the backend starts and
+  serves `/api/health` correctly; every controller/route/model file loads without error; a production
+  frontend build (`vite build`) compiles cleanly; the Vite dev server serves the app shell. Verify the
+  rest yourself once you have your own Atlas + Cloudinary credentials, following §2 - this is normal
+  for any new project and does not indicate a known bug.
 - **Real WhatsApp/Email delivery** has not been exercised against a live provider - only the demo-mode
   path (see §7) was exercised, by design, since no provider credentials were supplied.
-- **No automated end-to-end browser test** (e.g. Playwright/Cypress) was added; manual verification
-  was limited to a production build (`vite build`) and a dev-server smoke test, since this build
-  environment has no real MongoDB Atlas / Cloudinary credentials to exercise the full UI against.
-- **multer@1.x** is used for multipart uploads (the actively maintained Cloudinary storage adapter
-  only supports multer 1.x and Cloudinary v1 as peers); it carries known advisories for very old
-  Express versions, mitigated here by the file-type/size validation in `backend/middleware/upload.js`.
-  Consider migrating to `multer@2` when the ecosystem around it matures.
+- **No automated end-to-end browser test** (e.g. Playwright/Cypress) was added.
+- **multer@1.x** is used for multipart uploads. The community `multer-storage-cloudinary` package only
+  supports Cloudinary v1 as a peer dependency, which conflicts with the modern `cloudinary@^2` SDK used
+  here, so a small custom storage engine (`backend/middleware/cloudinaryStorage.js`) streams uploads
+  straight to Cloudinary v2 instead. multer 1.x itself carries known advisories versus 2.x; risk is
+  mitigated here by the file-type/size validation in `backend/middleware/upload.js`. Consider migrating
+  to `multer@2` (with a matching custom storage engine) when convenient.
 - Business rules in §5 are **safe, documented defaults** - they should be reviewed and confirmed
   against the real contract with HR Warehouse before go-live.
