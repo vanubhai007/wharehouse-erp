@@ -33,8 +33,19 @@ export const buyerApi = {
   get: (id) => client.get(`/buyers/${id}`),
   create: (data) => client.post('/buyers', data),
   update: (id, data) => client.put(`/buyers/${id}`, data),
+  listEnquiries: (params) => client.get('/buyers/enquiries', { params }),
   createEnquiry: (data) => client.post('/buyers/enquiries', data),
   negotiate: (id, data) => client.post(`/buyers/enquiries/${id}/negotiate`, data),
+  updateEnquiryStatus: (id, status) => client.post(`/buyers/enquiries/${id}/status`, { status }),
+};
+
+export const salesInquiryApi = {
+  list: (params) => client.get('/sales-inquiries', { params }),
+  get: (id) => client.get(`/sales-inquiries/${id}`),
+  create: (data) => client.post('/sales-inquiries', data),
+  update: (id, data) => client.put(`/sales-inquiries/${id}`, data),
+  updateStatus: (id, data) => client.post(`/sales-inquiries/${id}/status`, data),
+  convertToBuyer: (id) => client.post(`/sales-inquiries/${id}/convert-to-buyer`),
 };
 
 export const itemApi = {

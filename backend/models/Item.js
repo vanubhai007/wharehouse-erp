@@ -46,6 +46,10 @@ const itemSchema = new mongoose.Schema(
     purchaseDate: { type: Date },
     purchaseCost: { type: Number, required: true, min: 0 },
     estimatedResaleValue: { type: Number, min: 0 },
+    // Printed on item stickers (see Sticker Generator) - never hardcoded on
+    // the frontend, always read live from this record.
+    mrp: { type: Number, min: 0 }, // Maximum Retail Price
+    hrMartPrice: { type: Number, min: 0 }, // Actual selling price at HR Mart
 
     status: { type: String, enum: ITEM_STATUS, default: 'Handover Pending' },
     statusHistory: [statusHistoryEntrySchema],

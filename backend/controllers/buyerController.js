@@ -46,6 +46,41 @@ const updateBuyer = asyncHandler(async (req, res) => {
   res.json({ success: true, data: buyer });
 });
 
+// Lists Buyer Inquiries (BuyerEnquiry records) across all buyers, for the
+// dedicated Buyer Inquiry management page - getBuyer() above already
+// returns a single buyer's enquiries inline for their profile page.
+const listEnquiries = asyncHandler(async (req, res) => {
+  const { page, limit, skip } = getPagination(req.query);
+  const filter = {};
+  if (req.query.buyer) filter.buyer = req.query.buyer;
+  if (req.query.item) filter.item = req.query.item;
+  if (req.query.status) filter.status = req.query.status;
+
+  const [enquiries, total] = await Promise.all([
+    BuyerEnquiry.find(filter)
+      .populate('buyer', 'buyerId name businessName phone email')
+      .populate('item', 'itemId name sku category estimatedResaleValue mrp hrMartPrice status')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    BuyerEnquiry.countDocuments(filter),
+  ]);
+  res.json({ success: true, ...buildPaginatedResult(enquiries, total, page, limit) });
+});
+
+const updateEnquiryStatus = asyncHandler(async (req, res) => {
+  const enquiry = await BuyerEnquiry.findById(req.params.id);
+  if (!enquiry) throw ApiError.notFound('Enquiry not found');
+  const { status } = req.body;
+  if (!['Open', 'Negotiating', 'Converted', 'Closed'].includes(status)) {
+    throw ApiError.badRequest('Invalid status');
+  }
+  enquiry.status = status;
+  await enquiry.save();
+  await recordAudit({ entityType: 'BuyerEnquiry', entityId: enquiry._id, action: 'STATUS_CHANGE', user: req.user, toValue: status });
+  res.json({ success: true, data: enquiry });
+});
+
 const createEnquiry = asyncHandler(async (req, res) => {
   const { buyer, item, proposedPrice, note } = req.body;
   const enquiry = await BuyerEnquiry.create({
@@ -68,4 +103,13 @@ const addNegotiation = asyncHandler(async (req, res) => {
   res.json({ success: true, data: enquiry });
 });
 
-module.exports = { listBuyers, createBuyer, getBuyer, updateBuyer, createEnquiry, addNegotiation };
+module.exports = {
+  listBuyers,
+  createBuyer,
+  getBuyer,
+  updateBuyer,
+  listEnquiries,
+  updateEnquiryStatus,
+  createEnquiry,
+  addNegotiation,
+};

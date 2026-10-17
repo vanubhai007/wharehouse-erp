@@ -68,6 +68,12 @@ const DISPATCH_STATUS = ['Pending', 'Scheduled', 'Dispatched', 'Delivered', 'Clo
 
 const CUSTOMER_TYPES = ['Individual Owner', 'Business Owner', 'Buyer', 'Vendor'];
 
+// A Sales Inquiry is a general lead/prospect inquiry - it may or may not
+// already be tied to a registered Buyer record (see models/SalesInquiry.js).
+const SALES_INQUIRY_SOURCE = ['Website', 'Phone', 'Walk-in', 'Email', 'Referral', 'Other'];
+const SALES_INQUIRY_STATUS = ['New', 'Contacted', 'Qualified', 'Converted', 'Closed', 'Lost'];
+const INQUIRY_PRIORITY = ['Low', 'Medium', 'High'];
+
 // Default configurable business rules (see Settings model for live values).
 const DEFAULT_SETTINGS = {
   // CONFIRM WITH BUSINESS: rate per sq.ft per month used when a warehouse
@@ -105,5 +111,8 @@ module.exports = {
   PAYMENT_DIRECTION,
   DISPATCH_STATUS,
   CUSTOMER_TYPES,
+  SALES_INQUIRY_SOURCE,
+  SALES_INQUIRY_STATUS,
+  INQUIRY_PRIORITY,
   DEFAULT_SETTINGS,
 };

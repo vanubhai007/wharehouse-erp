@@ -26,6 +26,12 @@ import RefurbishmentList from './pages/refurbishment/RefurbishmentList';
 import SaleProposalList from './pages/sales/SaleProposalList';
 import SaleProposalDetail from './pages/sales/SaleProposalDetail';
 
+import SalesInquiryList from './pages/sales-inquiries/SalesInquiryList';
+
+import BuyerInquiryList from './pages/buyers/BuyerInquiryList';
+
+import StickerGenerator from './pages/stickers/StickerGenerator';
+
 import ApprovalList from './pages/approvals/ApprovalList';
 
 import InvoiceList from './pages/invoices/InvoiceList';
@@ -60,6 +66,7 @@ export default function App() {
 
           <Route path="/buyers" element={<BuyerList />} />
           <Route path="/buyers/:id" element={<BuyerProfile />} />
+          <Route path="/buyer-inquiries" element={<BuyerInquiryList />} />
 
           <Route path="/inventory" element={<ItemList />} />
           <Route path="/inventory/:id" element={<ItemDetail />} />
@@ -71,6 +78,10 @@ export default function App() {
 
           <Route path="/sales" element={<SaleProposalList />} />
           <Route path="/sales/:id" element={<SaleProposalDetail />} />
+
+          <Route path="/sales-inquiries" element={<SalesInquiryList />} />
+
+          <Route path="/stickers" element={<StickerGenerator />} />
 
           <Route path="/approvals" element={<ApprovalList />} />
 

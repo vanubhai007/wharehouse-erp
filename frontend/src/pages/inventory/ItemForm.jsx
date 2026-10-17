@@ -12,7 +12,7 @@ export default function ItemForm({ onClose, onSaved }) {
   const [form, setForm] = useState({
     name: '', sku: '', category: '', description: '', brand: '', model: '', serialNumber: '',
     owner: '', trackingType: 'Serialized', quantity: 1, unit: 'pcs',
-    purchaseSource: '', purchaseDate: '', purchaseCost: '', estimatedResaleValue: '',
+    purchaseSource: '', purchaseDate: '', purchaseCost: '', estimatedResaleValue: '', mrp: '', hrMartPrice: '',
     condition: 'Good', currentLocation: '', storageAreaSqFt: '', receivedDate: '',
     expectedDispatchDate: '', photos: [], documents: [],
   });
@@ -35,6 +35,10 @@ export default function ItemForm({ onClose, onSaved }) {
     try {
       const payload = { ...form, purchaseCost: Number(form.purchaseCost), quantity: Number(form.quantity) };
       if (form.estimatedResaleValue) payload.estimatedResaleValue = Number(form.estimatedResaleValue);
+      if (form.mrp) payload.mrp = Number(form.mrp);
+      else delete payload.mrp;
+      if (form.hrMartPrice) payload.hrMartPrice = Number(form.hrMartPrice);
+      else delete payload.hrMartPrice;
       if (form.storageAreaSqFt) payload.storageAreaSqFt = Number(form.storageAreaSqFt);
       if (!payload.currentLocation) delete payload.currentLocation;
       await itemApi.create(payload);
@@ -118,6 +122,14 @@ export default function ItemForm({ onClose, onSaved }) {
           <div className="form-field">
             <label>Estimated Resale Value</label>
             <input type="number" min="0" value={form.estimatedResaleValue} onChange={(e) => set('estimatedResaleValue', e.target.value)} />
+          </div>
+          <div className="form-field">
+            <label>MRP (for stickers)</label>
+            <input type="number" min="0" value={form.mrp} onChange={(e) => set('mrp', e.target.value)} />
+          </div>
+          <div className="form-field">
+            <label>HR Mart Price (for stickers)</label>
+            <input type="number" min="0" value={form.hrMartPrice} onChange={(e) => set('hrMartPrice', e.target.value)} />
           </div>
           <div className="form-field">
             <label>Warehouse Location</label>

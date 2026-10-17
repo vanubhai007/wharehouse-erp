@@ -25,6 +25,12 @@ const COLOR_MAP = {
   Settled: 'green',
   Active: 'green',
   Inactive: 'grey',
+  New: 'blue',
+  Contacted: 'blue',
+  Qualified: 'green',
+  Lost: 'red',
+  Open: 'blue',
+  Negotiating: 'orange',
 };
 
 export default function StatusBadge({ status }) {

@@ -12,9 +12,14 @@ const canManage = authorize(ROLES.ADMIN, ROLES.SALES_MANAGER);
 
 router.get('/', ctrl.listBuyers);
 router.post('/', canManage, buyerValidator, validate, ctrl.createBuyer);
-router.get('/:id', ctrl.getBuyer);
-router.put('/:id', canManage, buyerValidator, validate, ctrl.updateBuyer);
+
+// Registered before '/:id' so "enquiries" is never matched as a buyer id.
+router.get('/enquiries', ctrl.listEnquiries);
 router.post('/enquiries', canManage, ctrl.createEnquiry);
 router.post('/enquiries/:id/negotiate', canManage, ctrl.addNegotiation);
+router.post('/enquiries/:id/status', canManage, ctrl.updateEnquiryStatus);
+
+router.get('/:id', ctrl.getBuyer);
+router.put('/:id', canManage, buyerValidator, validate, ctrl.updateBuyer);
 
 module.exports = router;

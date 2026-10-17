@@ -32,6 +32,7 @@ export default function ItemDetail() {
   const [moveModal, setMoveModal] = useState(false);
   const [locations, setLocations] = useState([]);
   const [expenseModal, setExpenseModal] = useState(false);
+  const [pricingModal, setPricingModal] = useState(false);
 
   function load() {
     setLoading(true);
@@ -98,6 +99,7 @@ export default function ItemDetail() {
             </button>
           )}
           <button className="btn btn-secondary" onClick={openMoveModal}>Move Location</button>
+          <button className="btn btn-secondary" onClick={() => navigate(`/stickers?item=${item._id}`)}>Generate Sticker</button>
           {item.status === 'Available for Sale' && (
             <button className="btn btn-secondary" onClick={() => navigate(`/sales?item=${item._id}`)}>Propose Sale</button>
           )}
@@ -112,21 +114,34 @@ export default function ItemDetail() {
       </div>
 
       {tab === 'Overview' && (
-        <div className="card form-grid">
-          <div><strong>Owner:</strong> {item.owner?.businessName || item.owner?.name}</div>
-          <div><strong>SKU:</strong> {item.sku || '-'}</div>
-          <div><strong>Brand / Model:</strong> {item.brand || '-'} / {item.model || '-'}</div>
-          <div><strong>Serial Number:</strong> {item.serialNumber || '-'}</div>
-          <div><strong>Condition:</strong> {item.condition}</div>
-          <div><strong>Tracking:</strong> {item.trackingType} {item.trackingType === 'Batch' ? `(Qty: ${item.quantity} ${item.unit})` : ''}</div>
-          <div><strong>Purchase Cost:</strong> {formatCurrency(item.purchaseCost)}</div>
-          <div><strong>Estimated Resale:</strong> {formatCurrency(item.estimatedResaleValue)}</div>
-          <div><strong>Current Location:</strong> {item.currentLocation?.code || 'Not assigned'}</div>
-          <div><strong>Storage Area:</strong> {item.storageAreaSqFt || 0} sq ft</div>
-          <div><strong>Received Date:</strong> {formatDate(item.receivedDate)}</div>
-          <div><strong>Expected Dispatch:</strong> {formatDate(item.expectedDispatchDate)}</div>
-          <div style={{ gridColumn: '1 / -1' }}><strong>Description:</strong> {item.description || '-'}</div>
-        </div>
+        <>
+          <div className="card form-grid">
+            <div><strong>Owner:</strong> {item.owner?.businessName || item.owner?.name}</div>
+            <div><strong>SKU:</strong> {item.sku || '-'}</div>
+            <div><strong>Brand / Model:</strong> {item.brand || '-'} / {item.model || '-'}</div>
+            <div><strong>Serial Number:</strong> {item.serialNumber || '-'}</div>
+            <div><strong>Condition:</strong> {item.condition}</div>
+            <div><strong>Tracking:</strong> {item.trackingType} {item.trackingType === 'Batch' ? `(Qty: ${item.quantity} ${item.unit})` : ''}</div>
+            <div><strong>Purchase Cost:</strong> {formatCurrency(item.purchaseCost)}</div>
+            <div><strong>Current Location:</strong> {item.currentLocation?.code || 'Not assigned'}</div>
+            <div><strong>Storage Area:</strong> {item.storageAreaSqFt || 0} sq ft</div>
+            <div><strong>Received Date:</strong> {formatDate(item.receivedDate)}</div>
+            <div><strong>Expected Dispatch:</strong> {formatDate(item.expectedDispatchDate)}</div>
+            <div style={{ gridColumn: '1 / -1' }}><strong>Description:</strong> {item.description || '-'}</div>
+          </div>
+
+          <div className="card" style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h4>Pricing</h4>
+              <button className="btn btn-sm btn-secondary" onClick={() => setPricingModal(true)}>Edit Pricing</button>
+            </div>
+            <div className="form-grid">
+              <div><strong>Estimated Resale Value:</strong> {formatCurrency(item.estimatedResaleValue)}</div>
+              <div><strong>MRP:</strong> {item.mrp != null ? formatCurrency(item.mrp) : 'Not set'}</div>
+              <div><strong>HR Mart Price:</strong> {item.hrMartPrice != null ? formatCurrency(item.hrMartPrice) : 'Not set'}</div>
+            </div>
+          </div>
+        </>
       )}
 
       {tab === 'Photos & Documents' && (
@@ -271,6 +286,14 @@ export default function ItemDetail() {
         />
       )}
 
+      {pricingModal && (
+        <PricingFormModal
+          item={item}
+          onClose={() => setPricingModal(false)}
+          onSaved={() => { setPricingModal(false); load(); }}
+        />
+      )}
+
       {archiveConfirm && (
         <ConfirmDialog
           title="Archive this item?"
@@ -282,6 +305,59 @@ export default function ItemDetail() {
         />
       )}
     </div>
+  );
+}
+
+// Scoped pricing-only edit, since these two fields (used by the Sticker
+// Generator) are usually set some time after the item is first received,
+// not necessarily at creation.
+function PricingFormModal({ item, onClose, onSaved }) {
+  const [estimatedResaleValue, setEstimatedResaleValue] = useState(item.estimatedResaleValue ?? '');
+  const [mrp, setMrp] = useState(item.mrp ?? '');
+  const [hrMartPrice, setHrMartPrice] = useState(item.hrMartPrice ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      await itemApi.update(item._id, {
+        estimatedResaleValue: estimatedResaleValue === '' ? undefined : Number(estimatedResaleValue),
+        mrp: mrp === '' ? undefined : Number(mrp),
+        hrMartPrice: hrMartPrice === '' ? undefined : Number(hrMartPrice),
+      });
+      onSaved();
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Edit Pricing" onClose={onClose}>
+      {error && <p className="form-error">{error}</p>}
+      <form onSubmit={handleSubmit}>
+        <div className="form-field">
+          <label>Estimated Resale Value</label>
+          <input type="number" min="0" value={estimatedResaleValue} onChange={(e) => setEstimatedResaleValue(e.target.value)} />
+        </div>
+        <div className="form-field">
+          <label>MRP</label>
+          <input type="number" min="0" value={mrp} onChange={(e) => setMrp(e.target.value)} />
+        </div>
+        <div className="form-field">
+          <label>HR Mart Price</label>
+          <input type="number" min="0" value={hrMartPrice} onChange={(e) => setHrMartPrice(e.target.value)} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

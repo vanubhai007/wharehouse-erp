@@ -41,6 +41,11 @@ export const EXPENSE_CATEGORIES = [
   'Other',
 ];
 
+export const SALES_INQUIRY_SOURCE = ['Website', 'Phone', 'Walk-in', 'Email', 'Referral', 'Other'];
+export const SALES_INQUIRY_STATUS = ['New', 'Contacted', 'Qualified', 'Converted', 'Closed', 'Lost'];
+export const INQUIRY_PRIORITY = ['Low', 'Medium', 'High'];
+export const BUYER_ENQUIRY_STATUS = ['Open', 'Negotiating', 'Converted', 'Closed'];
+
 export const ROLES = {
   ADMIN: 'Admin',
   WAREHOUSE_MANAGER: 'Warehouse Manager',
