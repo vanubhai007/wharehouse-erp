@@ -27,8 +27,10 @@ import SaleProposalList from './pages/sales/SaleProposalList';
 import SaleProposalDetail from './pages/sales/SaleProposalDetail';
 
 import SalesInquiryList from './pages/sales-inquiries/SalesInquiryList';
+import SalesInquiryDetail from './pages/sales-inquiries/SalesInquiryDetail';
 
 import BuyerInquiryList from './pages/buyers/BuyerInquiryList';
+import BuyerInquiryDetail from './pages/buyers/BuyerInquiryDetail';
 
 import StickerGenerator from './pages/stickers/StickerGenerator';
 
@@ -67,6 +69,7 @@ export default function App() {
           <Route path="/buyers" element={<BuyerList />} />
           <Route path="/buyers/:id" element={<BuyerProfile />} />
           <Route path="/buyer-inquiries" element={<BuyerInquiryList />} />
+          <Route path="/buyer-inquiries/:id" element={<BuyerInquiryDetail />} />
 
           <Route path="/inventory" element={<ItemList />} />
           <Route path="/inventory/:id" element={<ItemDetail />} />
@@ -80,6 +83,7 @@ export default function App() {
           <Route path="/sales/:id" element={<SaleProposalDetail />} />
 
           <Route path="/sales-inquiries" element={<SalesInquiryList />} />
+          <Route path="/sales-inquiries/:id" element={<SalesInquiryDetail />} />
 
           <Route path="/stickers" element={<StickerGenerator />} />
 

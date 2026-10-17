@@ -99,7 +99,23 @@ export default function ItemDetail() {
             </button>
           )}
           <button className="btn btn-secondary" onClick={openMoveModal}>Move Location</button>
-          <button className="btn btn-secondary" onClick={() => navigate(`/stickers?item=${item._id}`)}>Generate Sticker</button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => {
+              // The Sticker Generator is fully manual-entry and never calls
+              // the inventory API itself - we pass the values it needs
+              // directly in the URL as a prefill convenience.
+              const qs = new URLSearchParams({
+                productName: item.name || '',
+                productId: item.itemId || '',
+                ...(item.mrp != null ? { mrp: item.mrp } : {}),
+                ...(item.hrMartPrice != null ? { hrMartPrice: item.hrMartPrice } : {}),
+              });
+              navigate(`/stickers?${qs.toString()}`);
+            }}
+          >
+            Generate Sticker
+          </button>
           {item.status === 'Available for Sale' && (
             <button className="btn btn-secondary" onClick={() => navigate(`/sales?item=${item._id}`)}>Propose Sale</button>
           )}

@@ -45,22 +45,23 @@ export default function BuyerProfile() {
         <p style={{ color: 'var(--color-text-muted)' }}>No enquiries recorded for this buyer yet.</p>
       ) : (
         <table className="data-table">
-          <thead><tr><th>Item</th><th>Status</th><th>Latest Offer</th><th>History</th></tr></thead>
+          <thead><tr><th>Product</th><th>Expected Price</th><th>Status</th><th>Latest Offer</th><th></th></tr></thead>
           <tbody>
             {enquiries.map((e) => {
               const last = e.negotiationHistory[e.negotiationHistory.length - 1];
               return (
                 <tr key={e._id}>
-                  <td><Link to={`/inventory/${e.item?._id}`}>{e.item?.itemId} - {e.item?.name}</Link></td>
-                  <td><StatusBadge status={e.status} /></td>
-                  <td>{last ? formatCurrency(last.proposedPrice) : '-'}</td>
                   <td>
-                    {e.negotiationHistory.map((h, idx) => (
-                      <div key={idx} style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                        {formatCurrency(h.proposedPrice)} - {formatDate(h.at)} {h.note ? `(${h.note})` : ''}
-                      </div>
-                    ))}
+                    {e.item ? (
+                      <Link to={`/inventory/${e.item._id}`}>{e.item.itemId} - {e.item.name}</Link>
+                    ) : (
+                      <>{e.productName}{e.productId ? ` [${e.productId}]` : ''}</>
+                    )}
                   </td>
+                  <td>{e.expectedPrice != null ? formatCurrency(e.expectedPrice) : '-'}</td>
+                  <td><StatusBadge status={e.status} /></td>
+                  <td>{last ? `${formatCurrency(last.proposedPrice)} (${formatDate(last.at)})` : '-'}</td>
+                  <td><Link className="btn btn-sm btn-secondary" to={`/buyer-inquiries/${e._id}`}>View</Link></td>
                 </tr>
               );
             })}

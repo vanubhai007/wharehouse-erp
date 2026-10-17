@@ -6,8 +6,6 @@ const { recordAudit } = require('../utils/audit');
 const { generateYearlyId, generateBuyerId } = require('../utils/idGenerator');
 const { getPagination, buildPaginatedResult } = require('../utils/paginate');
 
-const ITEM_POPULATE = { path: 'items.item', select: 'itemId name sku category estimatedResaleValue mrp hrMartPrice' };
-
 const listInquiries = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPagination(req.query);
   const filter = {};
@@ -21,11 +19,12 @@ const listInquiries = asyncHandler(async (req, res) => {
       { email: new RegExp(req.query.search, 'i') },
       { company: new RegExp(req.query.search, 'i') },
       { inquiryNumber: new RegExp(req.query.search, 'i') },
+      { productName: new RegExp(req.query.search, 'i') },
+      { productId: new RegExp(req.query.search, 'i') },
     ];
   }
   const [inquiries, total] = await Promise.all([
     SalesInquiry.find(filter)
-      .populate(ITEM_POPULATE)
       .populate('assignedTo', 'name role')
       .populate('convertedToBuyer', 'buyerId name businessName')
       .sort({ createdAt: -1 })
@@ -38,7 +37,6 @@ const listInquiries = asyncHandler(async (req, res) => {
 
 const getInquiry = asyncHandler(async (req, res) => {
   const inquiry = await SalesInquiry.findById(req.params.id)
-    .populate(ITEM_POPULATE)
     .populate('assignedTo', 'name role')
     .populate('buyer', 'buyerId name businessName')
     .populate('convertedToBuyer', 'buyerId name businessName');

@@ -73,6 +73,7 @@ const CUSTOMER_TYPES = ['Individual Owner', 'Business Owner', 'Buyer', 'Vendor']
 const SALES_INQUIRY_SOURCE = ['Website', 'Phone', 'Walk-in', 'Email', 'Referral', 'Other'];
 const SALES_INQUIRY_STATUS = ['New', 'Contacted', 'Qualified', 'Converted', 'Closed', 'Lost'];
 const INQUIRY_PRIORITY = ['Low', 'Medium', 'High'];
+const BUYER_ENQUIRY_STATUS = ['Open', 'Negotiating', 'Converted', 'Closed'];
 
 // Default configurable business rules (see Settings model for live values).
 const DEFAULT_SETTINGS = {
@@ -114,5 +115,6 @@ module.exports = {
   SALES_INQUIRY_SOURCE,
   SALES_INQUIRY_STATUS,
   INQUIRY_PRIORITY,
+  BUYER_ENQUIRY_STATUS,
   DEFAULT_SETTINGS,
 };

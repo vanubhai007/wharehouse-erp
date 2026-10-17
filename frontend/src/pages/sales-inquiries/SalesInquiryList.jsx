@@ -6,7 +6,7 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/common/St
 import Pagination from '../../components/common/Pagination';
 import StatusBadge from '../../components/common/StatusBadge';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
-import { formatDate } from '../../utils/format';
+import { formatCurrency, formatDate } from '../../utils/format';
 import { SALES_INQUIRY_STATUS } from '../../utils/constants';
 import SalesInquiryForm from './SalesInquiryForm';
 
@@ -66,7 +66,7 @@ export default function SalesInquiryList() {
       </div>
 
       <div className="toolbar">
-        <input placeholder="Search by name, phone, email, company..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 280 }} />
+        <input placeholder="Search by name, phone, email, company, product..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 300 }} />
         <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
           <option value="">All statuses</option>
           {SALES_INQUIRY_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -83,15 +83,18 @@ export default function SalesInquiryList() {
         <>
           <table className="data-table">
             <thead>
-              <tr><th>Inquiry #</th><th>Contact</th><th>Phone</th><th>Products</th><th>Priority</th><th>Status</th><th>Follow-up</th><th>Actions</th></tr>
+              <tr><th>Inquiry #</th><th>Contact</th><th>Phone</th><th>Product</th><th>Expected Price</th><th>MRP</th><th>HR Mart Price</th><th>Priority</th><th>Status</th><th>Follow-up</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {data.data.map((inq) => (
                 <tr key={inq._id}>
-                  <td>{inq.inquiryNumber}</td>
+                  <td><Link to={`/sales-inquiries/${inq._id}`}>{inq.inquiryNumber}</Link></td>
                   <td>{inq.contactName}{inq.company ? ` (${inq.company})` : ''}</td>
                   <td>{inq.phone}</td>
-                  <td>{(inq.items || []).map((i) => i.item?.name).filter(Boolean).join(', ') || '-'}</td>
+                  <td>{inq.productName}{inq.productId ? ` [${inq.productId}]` : ''}</td>
+                  <td>{inq.expectedPrice != null ? formatCurrency(inq.expectedPrice) : '-'}</td>
+                  <td>{inq.mrp != null ? formatCurrency(inq.mrp) : '-'}</td>
+                  <td>{inq.hrMartPrice != null ? formatCurrency(inq.hrMartPrice) : '-'}</td>
                   <td>{inq.priority}</td>
                   <td>
                     {inq.status === 'Converted' ? (
@@ -104,6 +107,7 @@ export default function SalesInquiryList() {
                   </td>
                   <td>{formatDate(inq.followUpDate)}</td>
                   <td>
+                    <Link className="btn btn-sm btn-secondary" to={`/sales-inquiries/${inq._id}`}>View</Link>{' '}
                     {inq.status !== 'Converted' ? (
                       <>
                         <button className="btn btn-sm btn-secondary" onClick={() => setEditing(inq)}>Edit</button>{' '}

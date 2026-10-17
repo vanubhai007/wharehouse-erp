@@ -51,7 +51,7 @@ See inline code comments in each module (`backend/controllers/`, `backend/servic
 4. **A Cloudinary account** (free tier) - https://cloudinary.com/users/register/free
    - From the Dashboard, copy your **Cloud Name**, **API Key** and **API Secret**.
 5. (Optional, can be skipped for local testing) An email SMTP account and a WhatsApp Business API
-   provider. Without these, the app runs in **demo mode** for notifications (see §7).
+   provider. Without these, the app runs in **demo mode** for notifications (see §8).
 
 ### Step-by-step setup
 
@@ -126,7 +126,7 @@ This runs two kinds of tests:
   in-memory MongoDB via `mongodb-memory-server`, which downloads a small `mongod` binary the first time
   it runs. This requires outbound internet access to `fastdl.mongodb.org`. If your network blocks that
   host, these two suites will fail to start with a clear message explaining why - it is not a code bug.
-  See §10 for the actual results observed while building this project.
+  See §11 for the actual results observed while building this project.
 
 ---
 
@@ -144,7 +144,7 @@ This runs two kinds of tests:
 | `JWT_RESET_EXPIRES_IN` | No (default `15m`) | Reset link lifetime |
 | `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Needed for uploads | Without these, every upload endpoint returns a clear "storage not configured" error instead of failing silently |
 | `FRONTEND_URL` | **Yes** | Used for CORS and for building password-reset links. In production, set this to your deployed frontend URL. |
-| `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USER` / `EMAIL_PASS` / `EMAIL_FROM` | Optional | SMTP email provider. Without these, notifications run in demo mode (see §7). |
+| `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USER` / `EMAIL_PASS` / `EMAIL_FROM` | Optional | SMTP email provider. Without these, notifications run in demo mode (see §8). |
 | `WHATSAPP_API_URL` / `WHATSAPP_API_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` | Optional | WhatsApp Business API provider. Without these, notifications run in demo mode. |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Optional | Used only by `npm run seed` |
 
@@ -214,7 +214,54 @@ defaults are implemented, are fully documented in code (`backend/config/constant
 
 ---
 
-## 7. Notifications (Email / WhatsApp)
+## 7. Sales Inquiry, Buyer Inquiry & Sticker Generator (manual-entry modules)
+
+These three modules are intentionally **independent of Inventory**: every field is typed in by hand,
+nothing is auto-populated from or overwritten by inventory data, and a product/buyer does not need to
+exist anywhere else in the system first.
+
+### Sales Inquiry (`/sales-inquiries`)
+A general sales lead. Captures contact/business info (name, company, phone, email, address, source),
+manually entered product info (product name/description, an optional free-text Product ID, quantity,
+expected price/budget, MRP, HR Mart Price), plus priority/status/follow-up/notes. `PUT
+/api/sales-inquiries/:id` only touches fields present in the request body, so editing one field (e.g.
+status) never clears another (e.g. a manually entered price). An explicit **Convert to Buyer** action
+creates a real `Buyer` record from the inquiry's contact details - this never happens automatically.
+
+### Buyer Inquiry (`/buyer-inquiries`)
+The same manual-entry pattern for a potential buyer's interest in a product: buyer name, company,
+phone, email, address, and manual product fields (name/description, Product ID, quantity, expected
+buying price, MRP, HR Mart Price). Creating or editing one does **not** require picking an existing
+Buyer or Inventory item - `buyer`/`item` are optional links, set only via the explicit **Convert to
+Buyer** action (so no duplicate Buyer is ever created just because a name was typed into the form). A
+running negotiation/offer history is kept alongside the primary manually entered price fields.
+
+### Sticker Generator (`/stickers`)
+Prints self-adhesive retail stickers at an **exact 80mm × 40mm** physical size. Product Name, Product
+ID, MRP and HR Mart Price are typed directly into the form - this page makes **no API calls** and has
+no dependency on Inventory data. Required fields (Product Name, Product ID, MRP, HR Mart Price) are
+validated before a sticker can be added to the print batch, so a sticker can never print with a missing
+price, a dash, `undefined` or `NaN`. QR codes are generated **locally in the browser** with the
+`qrcode` npm package (a real, scannable PNG - never a decorative placeholder); leave the QR Content
+field blank to auto-generate it from the entered Product ID + Name, or type your own content. Each
+batch entry supports multiple copies and is independently editable before printing.
+
+**Print isolation and exact sizing** are enforced by `Sticker.css`'s `@page { size: 80mm 40mm; margin:
+0; }` rule plus a `visibility: hidden` sweep of everything outside the sticker print area - this was
+verified with a real headless-Chromium render (not just read from the CSS): every sticker measured
+exactly 302.36px × 151.17px (80mm × 40mm at 96dpi) regardless of content length, and the sidebar,
+topbar, form controls and Print button were confirmed `visibility: hidden` under print media emulation.
+**Before printing on real label stock:** in the print dialog, set **Paper size** to your 80mm × 40mm
+label preset, turn off **"Fit to page" / "Scale to fit"** (scale must be 100%), and set margins to
+**None** - these settings live in the OS/browser print dialog and can't be forced from the page itself.
+
+The Inventory item detail page's **Generate Sticker** button still works as a convenience: it passes
+the item's name/ID/MRP/HR Mart Price as URL query parameters to prefill the manual form - the Sticker
+Generator itself never fetches them from the API.
+
+---
+
+## 8. Notifications (Email / WhatsApp)
 
 `backend/services/notificationService.js` implements a real send path for both channels, but only
 when the relevant provider credentials are present in `backend/.env`. When they are not configured,
@@ -225,7 +272,7 @@ dispatch-scheduled and delivery-confirmed events.
 
 ---
 
-## 8. Cloud Deployment
+## 9. Cloud Deployment
 
 ### MongoDB Atlas
 Already covered in §2. Use the same connection string for the deployed backend's `MONGO_URI`.
@@ -260,7 +307,7 @@ Or simply use `/setup` on the deployed frontend to create the first Admin accoun
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
@@ -272,10 +319,12 @@ Or simply use `/setup` on the deployed frontend to create the first Admin accoun
 | "This sale proposal has not been approved" when generating an invoice | Expected - an Owner/Approver (or Admin) must approve the proposal first. |
 | Password reset email never arrives | No email provider configured - the API runs in demo mode and returns the reset link directly in the response (`demoResetUrl`); the Forgot Password page displays it. |
 | `npm test` fails only on the two integration suites with a MongoDB download error | Your network blocks `fastdl.mongodb.org`. Either allow that host once (the binary is then cached for future runs) or run the tests in CI/an environment with that access. The two pure-logic suites always run regardless. |
+| Sticker print comes out larger/smaller than 80mm × 40mm, or on extra blank pages | Your print dialog has "Fit to page"/"Scale" turned on, or the wrong paper size selected. Set **Paper size** to a true 80mm × 40mm label, **Scale to 100%**, and margins to **None** (see §7). |
+| Sales/Buyer Inquiry: a price I entered seems to have disappeared after editing | Shouldn't happen - `update`/`updateEnquiry` only change fields present in the request. If it does, check the browser console for a failed save (network error) before re-entering the value. |
 
 ---
 
-## 10. Known Limitations / Not Yet Implemented
+## 11. Known Limitations / Not Yet Implemented
 
 Built honestly, not just claimed:
 
@@ -304,8 +353,22 @@ Built honestly, not just claimed:
   rest yourself once you have your own Atlas + Cloudinary credentials, following §2 - this is normal
   for any new project and does not indicate a known bug.
 - **Real WhatsApp/Email delivery** has not been exercised against a live provider - only the demo-mode
-  path (see §7) was exercised, by design, since no provider credentials were supplied.
-- **No automated end-to-end browser test** (e.g. Playwright/Cypress) was added.
+  path (see §8) was exercised, by design, since no provider credentials were supplied.
+- **No automated end-to-end browser test** (e.g. Playwright/Cypress) was added to the test suite itself.
+  That said, the Sticker Generator's print output (exact 80mm × 40mm sizing and print-only isolation of
+  the sidebar/topbar/form controls) **was** verified with a real headless-Chromium render against the
+  actual `Sticker.css`/`Sticker.jsx` - see §7 for the measured results.
+- **Sales Inquiry / Buyer Inquiry database persistence** ("does a manually entered price survive a page
+  refresh?") could not be verified against a live MongoDB in the sandboxed session that built this
+  rework, for the same reason as the integration tests above (no reachable test database, no real Atlas
+  credentials). What *was* verified there: both Mongoose schemas accept and validate fully manual
+  documents with zero Item/Buyer references (`validateSync()` returns no errors); both `express-validator`
+  chains correctly accept valid manual payloads and reject missing required fields (tested directly, not
+  just read); every new/changed route returns `401` live (reachable, auth-gated) rather than `404`; the
+  `update`/`updateEnquiry` controllers only ever touch fields present in the request body, which is what
+  makes "editing preserves other fields" true by construction once a real database is behind it. **You
+  must confirm the actual save-and-reload behavior yourself** against your real MongoDB before relying
+  on it in production - see §7's troubleshooting note if a value seems to disappear.
 - **multer@1.x** is used for multipart uploads. The community `multer-storage-cloudinary` package only
   supports Cloudinary v1 as a peer dependency, which conflicts with the modern `cloudinary@^2` SDK used
   here, so a small custom storage engine (`backend/middleware/cloudinaryStorage.js`) streams uploads
