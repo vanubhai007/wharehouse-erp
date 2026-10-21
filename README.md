@@ -214,19 +214,17 @@ defaults are implemented, are fully documented in code (`backend/config/constant
 
 ---
 
-## 7. Sales Inquiry, Buyer Inquiry & Sticker Generator (manual-entry modules)
-
-These three modules are intentionally **independent of Inventory**: every field is typed in by hand,
-nothing is auto-populated from or overwritten by inventory data, and a product/buyer does not need to
-exist anywhere else in the system first.
+## 7. Sales Inquiry, Buyer Inquiry (manual-entry modules) & Inline Sticker Printing
 
 ### Sales Inquiry (`/sales-inquiries`)
 A general sales lead. Captures contact/business info (name, company, phone, email, address, source),
 manually entered product info (product name/description, an optional free-text Product ID, quantity,
-expected price/budget, MRP, HR Mart Price), plus priority/status/follow-up/notes. `PUT
-/api/sales-inquiries/:id` only touches fields present in the request body, so editing one field (e.g.
-status) never clears another (e.g. a manually entered price). An explicit **Convert to Buyer** action
-creates a real `Buyer` record from the inquiry's contact details - this never happens automatically.
+expected price/budget, MRP, HR Mart Price), plus priority/status/follow-up/notes. This is intentionally
+**independent of Inventory**: nothing is auto-populated from or overwritten by inventory data, and a
+product does not need to exist anywhere else in the system first. `PUT /api/sales-inquiries/:id` only
+touches fields present in the request body, so editing one field (e.g. status) never clears another
+(e.g. a manually entered price). An explicit **Convert to Buyer** action creates a real `Buyer` record
+from the inquiry's contact details - this never happens automatically.
 
 ### Buyer Inquiry (`/buyer-inquiries`)
 The same manual-entry pattern for a potential buyer's interest in a product: buyer name, company,
@@ -236,28 +234,54 @@ Buyer or Inventory item - `buyer`/`item` are optional links, set only via the ex
 Buyer** action (so no duplicate Buyer is ever created just because a name was typed into the form). A
 running negotiation/offer history is kept alongside the primary manually entered price fields.
 
-### Sticker Generator (`/stickers`)
-Prints self-adhesive retail stickers at an **exact 80mm × 40mm** physical size. Product Name, Product
-ID, MRP and HR Mart Price are typed directly into the form - this page makes **no API calls** and has
-no dependency on Inventory data. Required fields (Product Name, Product ID, MRP, HR Mart Price) are
-validated before a sticker can be added to the print batch, so a sticker can never print with a missing
-price, a dash, `undefined` or `NaN`. QR codes are generated **locally in the browser** with the
-`qrcode` npm package (a real, scannable PNG - never a decorative placeholder); leave the QR Content
-field blank to auto-generate it from the entered Product ID + Name, or type your own content. Each
-batch entry supports multiple copies and is independently editable before printing.
+### Inline Sticker Printing (from Inventory - no separate page)
+There is **no standalone Sticker Generator page or route**. Printing a sticker is an action on an
+*existing* Inventory item only, available from both the Inventory list (a **Print Sticker** button on
+every row) and the item detail page: both open the same `PrintStickerModal`.
 
-**Print isolation and exact sizing** are enforced by `Sticker.css`'s `@page { size: 80mm 40mm; margin:
-0; }` rule plus a `visibility: hidden` sweep of everything outside the sticker print area - this was
-verified with a real headless-Chromium render (not just read from the CSS): every sticker measured
-exactly 302.36px × 151.17px (80mm × 40mm at 96dpi) regardless of content length, and the sidebar,
-topbar, form controls and Print button were confirmed `visibility: hidden` under print media emulation.
-**Before printing on real label stock:** in the print dialog, set **Paper size** to your 80mm × 40mm
-label preset, turn off **"Fit to page" / "Scale to fit"** (scale must be 100%), and set margins to
-**None** - these settings live in the OS/browser print dialog and can't be forced from the page itself.
+- All sticker data (Product Name, Product ID, MRP, HR Mart Price, QR) is **read live from the item
+  record** - nothing is typed into the sticker dialog itself. To change what's printed, edit the item.
+- The QR code encodes the item's own **permanent, already-generated lookup URL**
+  (`/inventory/<item id>`, the same one `qrService.js` stores in `item.qrCodeUrl` when the item is
+  first created) - never random or session-only data. An item saved before QR generation existed gets
+  one built locally on the fly, encoding that same URL pattern, so older items work too.
+- If **MRP or HR Mart Price is missing**, printing is blocked with a clear message and an **Edit
+  Pricing** action right there in the dialog - never a dash, `undefined`, `NaN`, or an invented ₹0. The
+  on-screen preview itself shows "Not set" rather than hide or fake the missing value.
+- Choose the number of copies, see a true-to-size preview, then print. Only the sticker(s) appear in
+  the print output - sidebar, topbar, the dialog itself and all other page chrome are excluded.
+- Prints at an **exact 80mm × 40mm** physical size, enforced by `Sticker.css`'s `@page { size: 80mm
+  40mm; margin: 0; }` rule plus a `visibility: hidden` sweep of everything except the print content.
+  Verified with a real headless-Chromium render (not just read from the CSS): every sticker measured
+  exactly 302.36px × 151.17px (80mm × 40mm at 96dpi), and the on-screen preview, modal, sidebar and
+  topbar were all confirmed `visibility: hidden` under print media emulation, leaving only the intended
+  sticker copies visible.
+- **Before printing on real label stock:** in the print dialog, set **Paper size** to your 80mm × 40mm
+  label preset, turn off **"Fit to page" / "Scale to fit"** (scale must be 100%), and set margins to
+  **None** - these settings live in the OS/browser print dialog and can't be forced from the page.
 
-The Inventory item detail page's **Generate Sticker** button still works as a convenience: it passes
-the item's name/ID/MRP/HR Mart Price as URL query parameters to prefill the manual form - the Sticker
-Generator itself never fetches them from the API.
+QR codes are still generated with the `qrcode` npm package (a real, scannable PNG - never a decorative
+placeholder); `PrintStickerModal.jsx` and the shared `Sticker.jsx`/`Sticker.css` live under
+`frontend/src/pages/inventory/` and `frontend/src/pages/stickers/` respectively.
+
+### Inventory search by Owner
+The Inventory list's search box also matches the item's **Owner/Customer name or business name**, in
+addition to item name, SKU, item ID and serial number (`GET /api/items?search=`).
+
+### Global quick search
+The topbar search is a debounced, multi-entity search across Inventory, Customers/Owners and Buyers
+(reusing each module's existing `?search=` endpoint - no new backend search service). Results are
+grouped by type; selecting one opens that record's own existing detail page. Press Enter to jump to the
+full Inventory list filtered by the typed term, as before.
+
+### Customer / Owner Created Date
+Every Customer/Owner record has an automatic, backend-assigned `createdAt` timestamp (Mongoose
+`timestamps: true`) - never a client-entered date. It's shown in the Customers list ("Created" column)
+and on the profile page, and `PUT /api/customers/:id` explicitly excludes `createdAt`, `customerId` and
+`isActive` from what a request body can overwrite, so editing a customer can never shift its creation
+date. The **Agreement Start/End Date** fields are a separate, genuine business field (the warehouse
+rental agreement's validity period, alongside an Agreement Number and rate override) and were
+deliberately left untouched - they are not a creation-date stand-in.
 
 ---
 
@@ -355,20 +379,24 @@ Built honestly, not just claimed:
 - **Real WhatsApp/Email delivery** has not been exercised against a live provider - only the demo-mode
   path (see §8) was exercised, by design, since no provider credentials were supplied.
 - **No automated end-to-end browser test** (e.g. Playwright/Cypress) was added to the test suite itself.
-  That said, the Sticker Generator's print output (exact 80mm × 40mm sizing and print-only isolation of
-  the sidebar/topbar/form controls) **was** verified with a real headless-Chromium render against the
-  actual `Sticker.css`/`Sticker.jsx` - see §7 for the measured results.
-- **Sales Inquiry / Buyer Inquiry database persistence** ("does a manually entered price survive a page
-  refresh?") could not be verified against a live MongoDB in the sandboxed session that built this
-  rework, for the same reason as the integration tests above (no reachable test database, no real Atlas
-  credentials). What *was* verified there: both Mongoose schemas accept and validate fully manual
-  documents with zero Item/Buyer references (`validateSync()` returns no errors); both `express-validator`
-  chains correctly accept valid manual payloads and reject missing required fields (tested directly, not
-  just read); every new/changed route returns `401` live (reachable, auth-gated) rather than `404`; the
-  `update`/`updateEnquiry` controllers only ever touch fields present in the request body, which is what
-  makes "editing preserves other fields" true by construction once a real database is behind it. **You
-  must confirm the actual save-and-reload behavior yourself** against your real MongoDB before relying
-  on it in production - see §7's troubleshooting note if a value seems to disappear.
+  That said, the inline sticker print output (exact 80mm × 40mm sizing and print-only isolation of the
+  sidebar/topbar/modal/dialog chrome) **was** verified with a real headless-Chromium render against the
+  actual `Sticker.css`/`Sticker.jsx`/`PrintStickerModal.jsx` - see §7 for the measured results.
+- **Sales Inquiry / Buyer Inquiry / Customer createdAt / inventory owner-search database persistence**
+  ("does a manually entered price, or an edited field, actually survive a save and page refresh?") could
+  not be verified against a live MongoDB in the sandboxed sessions that built this project, because no
+  test database or real Atlas credentials are reachable here (confirmed directly, not assumed -
+  `mongodb-memory-server`'s binary download is blocked by this sandbox's network policy, and no `mongod`
+  binary or Docker daemon is available either). What *was* verified instead, by running the actual
+  shipped controller functions and real Mongoose schemas with only the DB socket stubbed: both inquiry
+  schemas accept and validate fully manual documents with zero Item/Buyer references; both
+  `express-validator` chains correctly accept valid manual payloads and reject missing required fields;
+  the inquiry/customer/item `update*` controllers only ever touch fields present in the request body (so
+  editing one field never clears another); `updateCustomer` specifically rejects an attempt to overwrite
+  `createdAt`/`customerId`/`isActive` via the request body; and `listItems`'s owner-name search correctly
+  resolves a matching Customer and adds it to the query filter. **You must confirm the actual
+  save-and-reload behavior yourself** against your real MongoDB before relying on any of this in
+  production - see §7's troubleshooting note if a value seems to disappear.
 - **multer@1.x** is used for multipart uploads. The community `multer-storage-cloudinary` package only
   supports Cloudinary v1 as a peer dependency, which conflicts with the modern `cloudinary@^2` SDK used
   here, so a small custom storage engine (`backend/middleware/cloudinaryStorage.js`) streams uploads

@@ -1,37 +1,26 @@
 /* Exact physical sticker size: 80mm x 40mm. The @page rule below drives the
-   actual printed dimensions; everything else is just an on-screen preview. */
+   actual printed dimensions; everything else is just an on-screen preview.
 
-.sticker-batch-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 12px 0;
-}
-.sticker-batch-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--color-border);
+   Sticker printing is triggered inline from the Inventory module (item row
+   / item detail page - see PrintStickerModal.jsx), not from a separate
+   Sticker Generator page. */
+
+/* On-screen preview shown inside the Print Sticker modal. Rendered at true
+   80mm x 40mm size so the preview matches real physical proportions. */
+.sticker-modal-preview {
+  display: inline-block;
+  padding: 12px;
+  background: var(--color-bg);
   border-radius: var(--radius);
-  background: var(--color-surface);
-}
-.sticker-batch-row .copies-input { width: 70px; }
-
-.sticker-preview-area {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-  padding: 16px 0;
 }
 
-/* On-screen preview only - scaled up 2x so an 80x40mm label is readable.
-   The print stylesheet below removes this transform entirely. */
-.sticker-preview-zoom {
-  transform: scale(2);
-  transform-origin: top left;
-  margin-right: 60mm; /* reserve the extra width the 2x scale occupies */
-  margin-bottom: 40mm;
+/* The actual print source. Kept off-screen by default; @media print below
+   repositions it onto the page. Not nested inside the modal markup, so
+   print isolation never depends on the modal's own layout/overflow. */
+.sticker-print-root {
+  position: fixed;
+  left: -99999px;
+  top: 0;
 }
 
 .sticker {
@@ -128,10 +117,6 @@
     position: absolute;
     left: 0;
     top: 0;
-  }
-  .sticker-preview-zoom {
-    transform: none;
-    margin: 0;
   }
   .sticker {
     border: none;

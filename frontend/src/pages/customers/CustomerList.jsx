@@ -7,6 +7,7 @@ import Pagination from '../../components/common/Pagination';
 import StatusBadge from '../../components/common/StatusBadge';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import CustomerForm from './CustomerForm';
+import { formatDate } from '../../utils/format';
 
 export default function CustomerList() {
   const [data, setData] = useState({ data: [], pagination: { page: 1, totalPages: 1 } });
@@ -72,6 +73,7 @@ export default function CustomerList() {
                 <th>Type</th>
                 <th>Phone</th>
                 <th>Email</th>
+                <th>Created</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -86,6 +88,7 @@ export default function CustomerList() {
                   <td>{c.customerType}</td>
                   <td>{c.phone}</td>
                   <td>{c.email || '-'}</td>
+                  <td>{formatDate(c.createdAt)}</td>
                   <td>
                     <StatusBadge status={c.isActive ? 'Active' : 'Inactive'} />
                   </td>

@@ -20,13 +20,24 @@
 
 .sidebar-brand {
   padding: 18px 20px;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
+  letter-spacing: 0.01em;
   color: #fff;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.sidebar-nav { padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.sidebar-nav { padding: 14px 8px; display: flex; flex-direction: column; gap: 2px; flex: 1; }
+
+.sidebar-group-label {
+  padding: 14px 14px 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(232, 236, 247, 0.45);
+}
+.sidebar-group-label:first-child { padding-top: 2px; }
 
 .sidebar-link {
   display: flex;
@@ -37,12 +48,20 @@
   color: #c7d2ea;
   font-size: 14px;
   font-weight: 500;
+  border-left: 3px solid transparent;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 .sidebar-link:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
-.sidebar-link.active { background: var(--color-accent); color: #fff; }
+.sidebar-link.active { background: rgba(26, 115, 232, 0.22); color: #fff; border-left-color: var(--color-accent); font-weight: 600; }
 .sidebar-icon { width: 18px; text-align: center; }
 
 .main-area { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.breadcrumb-bar { padding: 14px 24px 0; }
+.breadcrumb-bar:empty { padding: 0; }
+@media (max-width: 768px) {
+  .breadcrumb-bar { padding: 10px 14px 0; }
+}
 
 .topbar {
   height: var(--topbar-height);
@@ -79,7 +98,18 @@
 
 .dropdown { position: absolute; right: 0; top: 46px; background: #fff; border: 1px solid var(--color-border); border-radius: var(--radius); box-shadow: var(--shadow-md); min-width: 200px; z-index: 60; }
 .dropdown-item { display: block; width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; }
-.dropdown-item:hover { background: var(--color-bg); }
+.dropdown-item:hover, .dropdown-item:focus-visible { background: var(--color-bg); }
+
+.search-dropdown { padding: 4px 0; }
+.search-group-label {
+  padding: 8px 14px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+.search-dropdown .dropdown-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .menu-toggle { display: none; background: none; border: none; font-size: 20px; }
 

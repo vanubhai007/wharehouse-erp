@@ -32,8 +32,6 @@ import SalesInquiryDetail from './pages/sales-inquiries/SalesInquiryDetail';
 import BuyerInquiryList from './pages/buyers/BuyerInquiryList';
 import BuyerInquiryDetail from './pages/buyers/BuyerInquiryDetail';
 
-import StickerGenerator from './pages/stickers/StickerGenerator';
-
 import ApprovalList from './pages/approvals/ApprovalList';
 
 import InvoiceList from './pages/invoices/InvoiceList';
@@ -84,8 +82,6 @@ export default function App() {
 
           <Route path="/sales-inquiries" element={<SalesInquiryList />} />
           <Route path="/sales-inquiries/:id" element={<SalesInquiryDetail />} />
-
-          <Route path="/stickers" element={<StickerGenerator />} />
 
           <Route path="/approvals" element={<ApprovalList />} />
 

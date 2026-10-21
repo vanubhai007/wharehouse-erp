@@ -8,6 +8,7 @@ import StatusBadge from '../../components/common/StatusBadge';
 import { formatCurrency } from '../../utils/format';
 import { ITEM_STATUS } from '../../utils/constants';
 import ItemForm from './ItemForm';
+import PrintStickerModal from './PrintStickerModal';
 
 export default function ItemList() {
   const [params, setParams] = useSearchParams();
@@ -19,6 +20,7 @@ export default function ItemList() {
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [stickerItem, setStickerItem] = useState(null);
 
   function load() {
     setLoading(true);
@@ -68,7 +70,7 @@ export default function ItemList() {
       </div>
 
       <div className="toolbar">
-        <input placeholder="Search by name, SKU, item ID, serial..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 280 }} />
+        <input placeholder="Search by name, SKU, item ID, serial, owner..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 280 }} />
         <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
           <option value="">All statuses</option>
           {ITEM_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -81,7 +83,7 @@ export default function ItemList() {
         <>
           <table className="data-table">
             <thead>
-              <tr><th>Item ID</th><th>Name</th><th>Category</th><th>Owner</th><th>Status</th><th>Location</th><th>Purchase Cost</th></tr>
+              <tr><th>Item ID</th><th>Name</th><th>Category</th><th>Owner</th><th>Status</th><th>Location</th><th>Purchase Cost</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {data.data.map((i) => (
@@ -93,6 +95,11 @@ export default function ItemList() {
                   <td><StatusBadge status={i.status} /></td>
                   <td>{i.currentLocation?.code || '-'}</td>
                   <td>{formatCurrency(i.purchaseCost)}</td>
+                  <td>
+                    <button className="btn btn-sm btn-secondary" onClick={() => setStickerItem(i)}>
+                      Print Sticker
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -102,6 +109,17 @@ export default function ItemList() {
       )}
 
       {showForm && <ItemForm onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); load(); }} />}
+
+      {stickerItem && (
+        <PrintStickerModal
+          item={stickerItem}
+          onClose={() => setStickerItem(null)}
+          onItemUpdated={(updated) => {
+            setStickerItem(updated);
+            setData((d) => ({ ...d, data: d.data.map((row) => (row._id === updated._id ? { ...row, ...updated, owner: row.owner, currentLocation: row.currentLocation } : row)) }));
+          }}
+        />
+      )}
     </div>
   );
 }

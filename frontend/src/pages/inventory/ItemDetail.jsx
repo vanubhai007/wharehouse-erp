@@ -11,6 +11,8 @@ import { formatCurrency, formatDate, formatDateTime } from '../../utils/format';
 import { ITEM_STATUS, ITEM_STATUS_TRANSITIONS } from '../../utils/constants';
 import { useAuth } from '../../context/AuthContext';
 import ExpenseFormModal from '../costing/ExpenseFormModal';
+import PricingFormModal from './PricingFormModal';
+import PrintStickerModal from './PrintStickerModal';
 
 const TABS = ['Overview', 'Photos & Documents', 'Cost Sheet', 'History', 'QR Code'];
 
@@ -33,6 +35,7 @@ export default function ItemDetail() {
   const [locations, setLocations] = useState([]);
   const [expenseModal, setExpenseModal] = useState(false);
   const [pricingModal, setPricingModal] = useState(false);
+  const [stickerModal, setStickerModal] = useState(false);
 
   function load() {
     setLoading(true);
@@ -99,23 +102,7 @@ export default function ItemDetail() {
             </button>
           )}
           <button className="btn btn-secondary" onClick={openMoveModal}>Move Location</button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => {
-              // The Sticker Generator is fully manual-entry and never calls
-              // the inventory API itself - we pass the values it needs
-              // directly in the URL as a prefill convenience.
-              const qs = new URLSearchParams({
-                productName: item.name || '',
-                productId: item.itemId || '',
-                ...(item.mrp != null ? { mrp: item.mrp } : {}),
-                ...(item.hrMartPrice != null ? { hrMartPrice: item.hrMartPrice } : {}),
-              });
-              navigate(`/stickers?${qs.toString()}`);
-            }}
-          >
-            Generate Sticker
-          </button>
+          <button className="btn btn-secondary" onClick={() => setStickerModal(true)}>Print Sticker</button>
           {item.status === 'Available for Sale' && (
             <button className="btn btn-secondary" onClick={() => navigate(`/sales?item=${item._id}`)}>Propose Sale</button>
           )}
@@ -310,6 +297,14 @@ export default function ItemDetail() {
         />
       )}
 
+      {stickerModal && (
+        <PrintStickerModal
+          item={item}
+          onClose={() => setStickerModal(false)}
+          onItemUpdated={load}
+        />
+      )}
+
       {archiveConfirm && (
         <ConfirmDialog
           title="Archive this item?"
@@ -321,59 +316,6 @@ export default function ItemDetail() {
         />
       )}
     </div>
-  );
-}
-
-// Scoped pricing-only edit, since these two fields (used by the Sticker
-// Generator) are usually set some time after the item is first received,
-// not necessarily at creation.
-function PricingFormModal({ item, onClose, onSaved }) {
-  const [estimatedResaleValue, setEstimatedResaleValue] = useState(item.estimatedResaleValue ?? '');
-  const [mrp, setMrp] = useState(item.mrp ?? '');
-  const [hrMartPrice, setHrMartPrice] = useState(item.hrMartPrice ?? '');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setSaving(true);
-    setError('');
-    try {
-      await itemApi.update(item._id, {
-        estimatedResaleValue: estimatedResaleValue === '' ? undefined : Number(estimatedResaleValue),
-        mrp: mrp === '' ? undefined : Number(mrp),
-        hrMartPrice: hrMartPrice === '' ? undefined : Number(hrMartPrice),
-      });
-      onSaved();
-    } catch (err) {
-      setError(apiErrorMessage(err));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal title="Edit Pricing" onClose={onClose}>
-      {error && <p className="form-error">{error}</p>}
-      <form onSubmit={handleSubmit}>
-        <div className="form-field">
-          <label>Estimated Resale Value</label>
-          <input type="number" min="0" value={estimatedResaleValue} onChange={(e) => setEstimatedResaleValue(e.target.value)} />
-        </div>
-        <div className="form-field">
-          <label>MRP</label>
-          <input type="number" min="0" value={mrp} onChange={(e) => setMrp(e.target.value)} />
-        </div>
-        <div className="form-field">
-          <label>HR Mart Price</label>
-          <input type="number" min="0" value={hrMartPrice} onChange={(e) => setHrMartPrice(e.target.value)} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
-        </div>
-      </form>
-    </Modal>
   );
 }
 

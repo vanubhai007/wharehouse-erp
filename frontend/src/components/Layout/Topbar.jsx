@@ -1,15 +1,64 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { approvalApi } from '../../api/endpoints';
+import { approvalApi, itemApi, customerApi, buyerApi } from '../../api/endpoints';
+
+// Global quick search: reuses the existing per-module list endpoints (each
+// already supports ?search=&limit=) instead of standing up a second,
+// competing search system. Debounced; results are grouped by type and
+// each one opens that record's own existing detail page.
+function useGlobalSearch(term) {
+  const [results, setResults] = useState({ items: [], customers: [], buyers: [] });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const q = term.trim();
+    if (q.length < 2) {
+      setResults({ items: [], customers: [], buyers: [] });
+      setError(false);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      setLoading(true);
+      setError(false);
+      Promise.all([
+        itemApi.list({ search: q, limit: 5 }).catch(() => null),
+        customerApi.list({ search: q, limit: 5 }).catch(() => null),
+        buyerApi.list({ search: q, limit: 5 }).catch(() => null),
+      ])
+        .then(([itemsRes, customersRes, buyersRes]) => {
+          if (cancelled) return;
+          if (!itemsRes && !customersRes && !buyersRes) setError(true);
+          setResults({
+            items: itemsRes?.data?.data || [],
+            customers: customersRes?.data?.data || [],
+            buyers: buyersRes?.data?.data || [],
+          });
+        })
+        .finally(() => !cancelled && setLoading(false));
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [term]);
+
+  return { results, loading, error };
+}
 
 export default function Topbar({ onMenuToggle }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState([]);
+  const searchBoxRef = useRef(null);
+  const { results, loading, error } = useGlobalSearch(search);
+  const hasResults = results.items.length + results.customers.length + results.buyers.length > 0;
 
   useEffect(() => {
     approvalApi
@@ -18,9 +67,26 @@ export default function Topbar({ onMenuToggle }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    function onClickOutside(e) {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target)) setSearchOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
   function handleSearch(e) {
     e.preventDefault();
-    if (search.trim()) navigate(`/inventory?search=${encodeURIComponent(search.trim())}`);
+    if (search.trim()) {
+      navigate(`/inventory?search=${encodeURIComponent(search.trim())}`);
+      setSearchOpen(false);
+    }
+  }
+
+  function goTo(path) {
+    setSearchOpen(false);
+    setSearch('');
+    navigate(path);
   }
 
   const initials = (user?.name || '?')
@@ -35,12 +101,58 @@ export default function Topbar({ onMenuToggle }) {
       <button className="menu-toggle" onClick={onMenuToggle} aria-label="Toggle menu">
         ☰
       </button>
-      <form className="topbar-search" onSubmit={handleSearch}>
+      <form className="topbar-search" onSubmit={handleSearch} ref={searchBoxRef} style={{ position: 'relative' }}>
         <input
-          placeholder="Search inventory by name, SKU, item ID, serial..."
+          placeholder="Search items, customers, buyers..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setSearchOpen(true);
+          }}
+          onFocus={() => setSearchOpen(true)}
         />
+        {searchOpen && search.trim().length >= 2 && (
+          <div className="dropdown search-dropdown" style={{ left: 0, right: 'auto', top: 44, width: '100%', maxHeight: 360, overflowY: 'auto' }}>
+            {loading && <div style={{ padding: 14, fontSize: 13, color: 'var(--color-text-muted)' }}>Searching...</div>}
+            {!loading && error && (
+              <div style={{ padding: 14, fontSize: 13, color: 'var(--color-danger)' }}>Search failed. Try again.</div>
+            )}
+            {!loading && !error && !hasResults && (
+              <div style={{ padding: 14, fontSize: 13, color: 'var(--color-text-muted)' }}>No results for "{search.trim()}".</div>
+            )}
+            {!loading && !error && results.items.length > 0 && (
+              <>
+                <div className="search-group-label">Inventory</div>
+                {results.items.map((i) => (
+                  <button key={i._id} className="dropdown-item" onClick={() => goTo(`/inventory/${i._id}`)}>
+                    <strong>{i.itemId}</strong> - {i.name}
+                    {i.owner?.businessName || i.owner?.name ? ` · ${i.owner.businessName || i.owner.name}` : ''}
+                  </button>
+                ))}
+              </>
+            )}
+            {!loading && !error && results.customers.length > 0 && (
+              <>
+                <div className="search-group-label">Customers / Owners</div>
+                {results.customers.map((c) => (
+                  <button key={c._id} className="dropdown-item" onClick={() => goTo(`/customers/${c._id}`)}>
+                    <strong>{c.customerId}</strong> - {c.businessName || c.name}
+                  </button>
+                ))}
+              </>
+            )}
+            {!loading && !error && results.buyers.length > 0 && (
+              <>
+                <div className="search-group-label">Buyers</div>
+                {results.buyers.map((b) => (
+                  <button key={b._id} className="dropdown-item" onClick={() => goTo(`/buyers/${b._id}`)}>
+                    <strong>{b.buyerId}</strong> - {b.businessName || b.name}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        )}
       </form>
       <div className="topbar-right">
         <div style={{ position: 'relative' }}>

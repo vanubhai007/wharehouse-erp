@@ -39,6 +39,7 @@ export default function CustomerProfile() {
           <h1>{customer.businessName || customer.name}</h1>
           <p style={{ color: 'var(--color-text-muted)' }}>
             {customer.customerId} · {customer.customerType} · <StatusBadge status={customer.isActive ? 'Active' : 'Inactive'} />
+            {' '}· Created {formatDate(customer.createdAt)}
           </p>
         </div>
       </div>
@@ -65,9 +66,10 @@ export default function CustomerProfile() {
           <div><strong>Email:</strong> {customer.email || '-'}</div>
           <div><strong>GSTIN:</strong> {customer.gstin || '-'}</div>
           <div><strong>Contact Person:</strong> {customer.contactPerson || '-'}</div>
+          <div><strong>Created Date:</strong> {formatDate(customer.createdAt)}</div>
           <div style={{ gridColumn: '1 / -1' }}><strong>Address:</strong> {customer.address || '-'}</div>
           <div><strong>Agreement No:</strong> {customer.agreement?.number || '-'}</div>
-          <div><strong>Agreement Period:</strong> {formatDate(customer.agreement?.startDate)} - {formatDate(customer.agreement?.endDate)}</div>
+          <div><strong>Agreement Period (rental contract validity):</strong> {formatDate(customer.agreement?.startDate)} - {formatDate(customer.agreement?.endDate)}</div>
           <div style={{ gridColumn: '1 / -1' }}><strong>Notes:</strong> {customer.notes || '-'}</div>
         </div>
       )}

@@ -77,11 +77,18 @@ const getCustomerProfile = asyncHandler(async (req, res) => {
   });
 });
 
+// Fields that must never be overwritten by an update request. createdAt is
+// the authoritative record-creation timestamp (Phase 3: Created Date) and
+// must never shift on edit, however the request body is built.
+const CUSTOMER_IMMUTABLE_FIELDS = ['customerId', 'createdAt', 'createdBy', 'isActive'];
+
 const updateCustomer = asyncHandler(async (req, res) => {
   const customer = await Customer.findById(req.params.id);
   if (!customer) throw ApiError.notFound('Customer not found');
   const before = customer.toObject();
-  Object.assign(customer, req.body, { updatedBy: req.user._id });
+  const payload = { ...req.body };
+  for (const field of CUSTOMER_IMMUTABLE_FIELDS) delete payload[field];
+  Object.assign(customer, payload, { updatedBy: req.user._id });
   await customer.save();
   await recordAudit({ entityType: 'Customer', entityId: customer._id, action: 'UPDATE', user: req.user, fromValue: before, toValue: customer.toObject() });
   res.json({ success: true, data: customer });

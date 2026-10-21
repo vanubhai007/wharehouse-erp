@@ -1,4 +1,5 @@
 const Item = require('../models/Item');
+const Customer = require('../models/Customer');
 const WarehouseLocation = require('../models/WarehouseLocation');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
@@ -21,12 +22,14 @@ const listItems = asyncHandler(async (req, res) => {
   if (req.query.currentLocation) filter.currentLocation = req.query.currentLocation;
   if (req.query.includeArchived === 'true') delete filter.isArchived;
   if (req.query.search) {
-    filter.$or = [
-      { name: new RegExp(req.query.search, 'i') },
-      { sku: new RegExp(req.query.search, 'i') },
-      { itemId: new RegExp(req.query.search, 'i') },
-      { serialNumber: new RegExp(req.query.search, 'i') },
-    ];
+    const term = new RegExp(req.query.search, 'i');
+    const or = [{ name: term }, { sku: term }, { itemId: term }, { serialNumber: term }];
+    // Owner is a reference, not a text field on Item itself - resolve
+    // matching Customer/Owner records first so searching by owner name
+    // still works (Phase: inventory search by Owner/customer name).
+    const matchingOwners = await Customer.find({ $or: [{ name: term }, { businessName: term }] }, '_id');
+    if (matchingOwners.length > 0) or.push({ owner: { $in: matchingOwners.map((o) => o._id) } });
+    filter.$or = or;
   }
 
   const [items, total] = await Promise.all([
