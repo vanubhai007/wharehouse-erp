@@ -6,9 +6,13 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { recordAudit } = require('../utils/audit');
 const { sendEmail } = require('../services/notificationService');
+const { passwordFingerprint, fingerprintMatches } = require('../utils/passwordFingerprint');
 
+// `user` must have its password hash loaded. The pwv claim ties the token to
+// the current password, so changing or resetting it invalidates the token.
 function signAccessToken(user) {
-  return jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
+  const pwv = passwordFingerprint(user.password, 'access');
+  return jwt.sign({ id: user._id, role: user.role, pwv }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '1d',
   });
 }
@@ -102,12 +106,15 @@ const me = asyncHandler(async (req, res) => {
 
 const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  const user = await User.findOne({ email: email.toLowerCase() });
+  const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
   // Always respond success to avoid leaking which emails are registered.
   if (!user) {
     return res.json({ success: true, message: 'If that account exists, a reset link has been sent.' });
   }
-  const resetToken = jwt.sign({ id: user._id, purpose: 'reset' }, process.env.JWT_RESET_SECRET, {
+  // pwv makes the link single-use: once the password changes, this link (and
+  // every other link issued before the change) no longer matches.
+  const pwv = passwordFingerprint(user.password, 'reset');
+  const resetToken = jwt.sign({ id: user._id, purpose: 'reset', pwv }, process.env.JWT_RESET_SECRET, {
     expiresIn: process.env.JWT_RESET_EXPIRES_IN || '15m',
   });
   const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
@@ -148,8 +155,10 @@ const resetPassword = asyncHandler(async (req, res) => {
     throw ApiError.badRequest('Invalid reset token');
   }
 
-  const user = await User.findById(payload.id);
-  if (!user) throw ApiError.badRequest('Reset link is invalid or has expired');
+  const user = await User.findById(payload.id).select('+password');
+  if (!user || !fingerprintMatches(payload.pwv, user.password, 'reset')) {
+    throw ApiError.badRequest('Reset link is invalid or has expired');
+  }
 
   user.password = password;
   await user.save();
