@@ -3,6 +3,7 @@ const CloudinaryStorage = require('./cloudinaryStorage');
 const { isConfigured } = require('../config/cloudinary');
 const ApiError = require('../utils/ApiError');
 const { ROLES } = require('../config/constants');
+const { PUBLIC_ID_PATTERN } = require('../utils/fileRefs');
 
 const MAX_FILE_SIZE_MB = 10;
 
@@ -16,9 +17,6 @@ const UPLOAD_FOLDERS = {
   payments: [ROLES.ADMIN, ROLES.ACCOUNTS],
   refurbishment: [ROLES.ADMIN, ROLES.WAREHOUSE_MANAGER, ROLES.WAREHOUSE_STAFF],
 };
-
-// Cloudinary public IDs created by this app: hrwarehouse/<folder>/<random id>.
-const PUBLIC_ID_PATTERN = /^hrwarehouse\/([a-z]+)\/[A-Za-z0-9_-]+$/;
 const ALLOWED_MIME = [
   'image/jpeg',
   'image/png',

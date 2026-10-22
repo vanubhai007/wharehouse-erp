@@ -1,4 +1,5 @@
 import { formatCurrency } from '../../utils/format';
+import { safeImageSrc } from '../../utils/safeUrl';
 
 // Pure presentational sticker, sized exactly 80mm x 40mm by Sticker.css.
 // `row` fields are mapped 1:1 and only from their own named field -
@@ -16,13 +17,14 @@ function priceOrNotSet(value) {
 }
 
 export default function Sticker({ row }) {
+  const qrSrc = safeImageSrc(row.qrDataUrl);
   return (
     <div className="sticker">
       <div className="sticker-top">
         <div className="sticker-name">{row.productName}</div>
-        {row.qrDataUrl && (
+        {qrSrc && (
           <div className="sticker-qr">
-            <img src={row.qrDataUrl} alt={`QR code for ${row.productId}`} />
+            <img src={qrSrc} alt={`QR code for ${row.productId}`} />
           </div>
         )}
       </div>

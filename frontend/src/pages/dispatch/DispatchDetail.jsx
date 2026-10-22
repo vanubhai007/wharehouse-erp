@@ -8,6 +8,7 @@ import Modal from '../../components/common/Modal';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import FileUpload from '../../components/common/FileUpload';
 import { formatCurrency, formatDate } from '../../utils/format';
+import { safeUrl } from '../../utils/safeUrl';
 
 export default function DispatchDetail() {
   const { id } = useParams();
@@ -173,11 +174,16 @@ function ProofUploader({ dispatchId, initialFiles, onDone }) {
       <input id={`proof-input-${dispatchId}`} type="file" multiple accept="image/*,.pdf" style={{ display: 'none' }} onChange={(e) => handleFiles(e.target.files)} />
       {error && <span className="form-error">{error}</span>}
       <div className="thumb-gallery">
-        {files.map((f) => (
-          <a key={f._id} href={f.url} target="_blank" rel="noreferrer" className="thumb">
-            <img src={f.url} alt="proof" />
-          </a>
-        ))}
+        {files.map((f) => {
+          const href = safeUrl(f.url);
+          return href ? (
+            <a key={f._id} href={href} target="_blank" rel="noreferrer" className="thumb">
+              <img src={href} alt="proof" />
+            </a>
+          ) : (
+            <div key={f._id} className="thumb">Unavailable file</div>
+          );
+        })}
       </div>
     </div>
   );

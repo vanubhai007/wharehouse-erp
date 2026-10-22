@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { uploadApi } from '../../api/endpoints';
 import { apiErrorMessage } from '../../api/client';
+import { safeUrl } from '../../utils/safeUrl';
 
 const IMAGE_EXT = /\.(jpe?g|png|gif|webp)$/i;
 
@@ -69,20 +70,26 @@ export default function FileUpload({ folder, label = 'Files', files = [], onChan
       {error && <span className="form-error">{error}</span>}
       {files.length > 0 && (
         <div className="thumb-gallery">
-          {files.map((f, idx) => (
-            <div className="thumb" key={f.publicId || f._id || idx}>
-              {IMAGE_EXT.test(f.url || '') ? (
-                <img src={f.url} alt={f.originalName || 'file'} />
-              ) : (
-                <a href={f.url} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 11, textAlign: 'center', padding: 4 }}>
-                  {f.originalName || 'Document'}
-                </a>
-              )}
-              <button type="button" className="remove-btn" onClick={() => removeFile(idx)} title="Remove">
-                ×
-              </button>
-            </div>
-          ))}
+          {files.map((f, idx) => {
+            const href = safeUrl(f.url);
+            const cellStyle = { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 11, textAlign: 'center', padding: 4 };
+            return (
+              <div className="thumb" key={f.publicId || f._id || idx}>
+                {href && IMAGE_EXT.test(href) ? (
+                  <img src={href} alt={f.originalName || 'file'} />
+                ) : href ? (
+                  <a href={href} target="_blank" rel="noreferrer" style={cellStyle}>
+                    {f.originalName || 'Document'}
+                  </a>
+                ) : (
+                  <span style={cellStyle}>Unavailable file</span>
+                )}
+                <button type="button" className="remove-btn" onClick={() => removeFile(idx)} title="Remove">
+                  ×
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

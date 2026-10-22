@@ -1,6 +1,7 @@
 const Settings = require('../models/Settings');
 const asyncHandler = require('../utils/asyncHandler');
 const { recordAudit } = require('../utils/audit');
+const { sanitizeLogoUrl } = require('../utils/fileRefs');
 
 const getSettings = asyncHandler(async (req, res) => {
   const settings = await Settings.getSettings();
@@ -25,6 +26,9 @@ const updateSettings = asyncHandler(async (req, res) => {
     'companyEmail',
     'companyLogoUrl',
   ];
+  if (req.body.companyLogoUrl !== undefined) {
+    req.body.companyLogoUrl = sanitizeLogoUrl(req.body.companyLogoUrl, settings.companyLogoUrl);
+  }
   for (const field of editableFields) {
     if (req.body[field] !== undefined) settings[field] = req.body[field];
   }

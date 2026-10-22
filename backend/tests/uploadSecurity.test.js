@@ -326,4 +326,10 @@ describe('delete authorization', () => {
       expect(res.status).toBe(200);
     }
   });
+
+  test('a PDF public ID that keeps its .pdf extension can be deleted', async () => {
+    const res = await deleteAs(ROLES.ACCOUNTS, 'hrwarehouse/payments/abc123.pdf');
+    expect(res.status).toBe(200);
+    expect(mockDestroys).toContainEqual({ publicId: 'hrwarehouse/payments/abc123.pdf', resourceType: 'raw' });
+  });
 });

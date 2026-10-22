@@ -5,6 +5,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { recordAudit } = require('../utils/audit');
 const { mapUploadedFiles } = require('../utils/fileMapper');
+const { sanitizeFileRefs } = require('../utils/fileRefs');
 
 const listJobs = asyncHandler(async (req, res) => {
   const filter = {};
@@ -18,6 +19,7 @@ const createJob = asyncHandler(async (req, res) => {
   const item = await Item.findById(req.body.item);
   if (!item) throw ApiError.badRequest('Invalid item');
 
+  sanitizeFileRefs(req.body, { beforePhotos: 'refurbishment', afterPhotos: 'refurbishment' }, null, req.user);
   const job = await Refurbishment.create({ ...req.body, createdBy: req.user._id });
 
   if (item.status === 'In Warehouse') {

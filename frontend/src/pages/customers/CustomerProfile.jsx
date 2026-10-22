@@ -5,6 +5,7 @@ import { apiErrorMessage } from '../../api/client';
 import { LoadingState, ErrorState } from '../../components/common/States';
 import StatusBadge from '../../components/common/StatusBadge';
 import { formatCurrency, formatDate } from '../../utils/format';
+import { safeUrl } from '../../utils/safeUrl';
 
 const TABS = ['Overview', 'Inventory', 'Expenses', 'Invoices', 'Settlements', 'Documents'];
 
@@ -147,11 +148,16 @@ export default function CustomerProfile() {
 
       {tab === 'Documents' && (
         <div className="thumb-gallery">
-          {[...customer.documents, ...customer.photos].map((f) => (
-            <a key={f._id} href={f.url} target="_blank" rel="noreferrer" className="thumb">
-              <img src={f.url} alt={f.originalName} onError={(e) => (e.target.style.display = 'none')} />
-            </a>
-          ))}
+          {[...customer.documents, ...customer.photos].map((f) => {
+            const href = safeUrl(f.url);
+            return href ? (
+              <a key={f._id} href={href} target="_blank" rel="noreferrer" className="thumb">
+                <img src={href} alt={f.originalName} onError={(e) => (e.target.style.display = 'none')} />
+              </a>
+            ) : (
+              <div key={f._id} className="thumb">Unavailable file</div>
+            );
+          })}
           {customer.documents.length + customer.photos.length === 0 && <p>No documents uploaded.</p>}
         </div>
       )}

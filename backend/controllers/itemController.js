@@ -7,11 +7,14 @@ const { recordAudit } = require('../utils/audit');
 const { generateItemId } = require('../utils/idGenerator');
 const { getPagination, buildPaginatedResult } = require('../utils/paginate');
 const { mapUploadedFiles } = require('../utils/fileMapper');
+const { sanitizeFileRefs } = require('../utils/fileRefs');
 const { generateItemQr } = require('../services/qrService');
 const { getItemCostSheet } = require('../services/costService');
 const { ITEM_STATUS_TRANSITIONS, ITEM_STATUS } = require('../config/constants');
 const { isTransitionAllowed } = require('../utils/statusTransition');
 const { Parser: CsvParser } = require('json2csv');
+
+const ITEM_FILE_FIELDS = { photos: 'items', documents: 'items' };
 
 const listItems = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPagination(req.query);
@@ -45,8 +48,12 @@ const listItems = asyncHandler(async (req, res) => {
 });
 
 const createItem = asyncHandler(async (req, res) => {
+  sanitizeFileRefs(req.body, ITEM_FILE_FIELDS, null, req.user);
   const itemId = await generateItemId();
   const payload = { ...req.body, itemId, createdBy: req.user._id };
+  // The QR code is always generated server-side below.
+  delete payload.qrCodeUrl;
+  delete payload.qrCodePublicId;
 
   payload.statusHistory = [
     { to: payload.status || 'Handover Pending', changedBy: req.user._id, changedByName: req.user.name, remarks: 'Item created' },
@@ -92,6 +99,7 @@ const updateItem = asyncHandler(async (req, res) => {
   const before = item.toObject();
 
   const immutable = ['itemId', 'status', 'statusHistory', 'locationHistory', 'qrCodeUrl', 'qrCodePublicId'];
+  sanitizeFileRefs(req.body, ITEM_FILE_FIELDS, item, req.user);
   for (const key of Object.keys(req.body)) {
     if (!immutable.includes(key)) item[key] = req.body[key];
   }

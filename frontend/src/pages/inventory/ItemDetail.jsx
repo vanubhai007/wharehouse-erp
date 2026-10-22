@@ -8,6 +8,7 @@ import Modal from '../../components/common/Modal';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import FileUpload from '../../components/common/FileUpload';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/format';
+import { safeImageSrc } from '../../utils/safeUrl';
 import { ITEM_STATUS, ITEM_STATUS_TRANSITIONS } from '../../utils/constants';
 import { useAuth } from '../../context/AuthContext';
 import ExpenseFormModal from '../costing/ExpenseFormModal';
@@ -230,11 +231,11 @@ export default function ItemDetail() {
 
       {tab === 'QR Code' && (
         <div className="card" style={{ textAlign: 'center' }}>
-          {item.qrCodeUrl ? (
+          {safeImageSrc(item.qrCodeUrl) ? (
             <>
-              <img src={item.qrCodeUrl} alt="QR Code" style={{ width: 220, height: 220 }} />
+              <img src={safeImageSrc(item.qrCodeUrl)} alt="QR Code" style={{ width: 220, height: 220 }} />
               <div style={{ marginTop: 12 }}>
-                <a className="btn btn-secondary btn-sm" href={item.qrCodeUrl} download={`${item.itemId}-qr.png`}>Download QR</a>{' '}
+                <a className="btn btn-secondary btn-sm" href={safeImageSrc(item.qrCodeUrl)} download={`${item.itemId}-qr.png`}>Download QR</a>{' '}
                 <button className="btn btn-secondary btn-sm" onClick={() => window.print()}>Print</button>
               </div>
             </>

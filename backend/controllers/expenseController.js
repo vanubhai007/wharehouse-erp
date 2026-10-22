@@ -4,6 +4,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { recordAudit } = require('../utils/audit');
 const { mapUploadedFiles } = require('../utils/fileMapper');
+const { sanitizeFileRefs } = require('../utils/fileRefs');
 
 function buildDedupeKey({ item, category, date, amount, vendor }) {
   const day = new Date(date || Date.now()).toISOString().slice(0, 10);
@@ -25,6 +26,7 @@ const listExpenses = asyncHandler(async (req, res) => {
 });
 
 const createExpense = asyncHandler(async (req, res) => {
+  sanitizeFileRefs(req.body, { receipts: 'expenses' }, null, req.user);
   const dedupeKey = buildDedupeKey(req.body);
   if (!req.body.force) {
     const existing = await Expense.findOne({ dedupeKey });

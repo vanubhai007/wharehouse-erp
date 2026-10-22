@@ -5,6 +5,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { recordAudit } = require('../utils/audit');
 const { mapUploadedFiles } = require('../utils/fileMapper');
+const { sanitizeFileRefs } = require('../utils/fileRefs');
 const { generateReceiptPdf } = require('../services/pdfService');
 
 const listPayments = asyncHandler(async (req, res) => {
@@ -20,6 +21,7 @@ const listPayments = asyncHandler(async (req, res) => {
 // amountPaid/paymentStatus. An invoice is never marked Paid just because it
 // was generated - only an actual recorded payment moves that status.
 const createPayment = asyncHandler(async (req, res) => {
+  sanitizeFileRefs(req.body, { proof: 'payments' }, null, req.user);
   const payment = await Payment.create({ ...req.body, recordedBy: req.user._id });
 
   if (payment.invoice) {

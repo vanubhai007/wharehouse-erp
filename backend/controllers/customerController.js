@@ -9,6 +9,9 @@ const { recordAudit } = require('../utils/audit');
 const { generateCustomerId } = require('../utils/idGenerator');
 const { getPagination, buildPaginatedResult } = require('../utils/paginate');
 const { mapUploadedFiles } = require('../utils/fileMapper');
+const { sanitizeFileRefs } = require('../utils/fileRefs');
+
+const CUSTOMER_FILE_FIELDS = { documents: 'customers', photos: 'customers' };
 
 const listCustomers = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPagination(req.query);
@@ -32,6 +35,7 @@ const listCustomers = asyncHandler(async (req, res) => {
 });
 
 const createCustomer = asyncHandler(async (req, res) => {
+  sanitizeFileRefs(req.body, CUSTOMER_FILE_FIELDS, null, req.user);
   const customerId = await generateCustomerId();
   const customer = await Customer.create({ ...req.body, customerId, createdBy: req.user._id });
   await recordAudit({ entityType: 'Customer', entityId: customer._id, action: 'CREATE', user: req.user, toValue: customer.toObject() });
@@ -86,6 +90,7 @@ const updateCustomer = asyncHandler(async (req, res) => {
   const customer = await Customer.findById(req.params.id);
   if (!customer) throw ApiError.notFound('Customer not found');
   const before = customer.toObject();
+  sanitizeFileRefs(req.body, CUSTOMER_FILE_FIELDS, customer, req.user);
   const payload = { ...req.body };
   for (const field of CUSTOMER_IMMUTABLE_FIELDS) delete payload[field];
   Object.assign(customer, payload, { updatedBy: req.user._id });
