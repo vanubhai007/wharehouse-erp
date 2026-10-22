@@ -9,6 +9,7 @@ const Refurbishment = require('../models/Refurbishment');
 const Settings = require('../models/Settings');
 const asyncHandler = require('../utils/asyncHandler');
 const { calculateItemRental } = require('../services/rentalService');
+const { REPORT_ACCESS } = require('../config/constants');
 
 // Every figure here is computed live from MongoDB - nothing is hardcoded.
 // Cards map 1:1 to a filtered list page on the frontend via the "link" field.
@@ -73,40 +74,60 @@ const getDashboard = asyncHandler(async (req, res) => {
   const statusCounts = {};
   for (const item of activeItems) statusCounts[item.status] = (statusCounts[item.status] || 0) + 1;
 
-  res.json({
-    success: true,
-    data: {
-      cards: {
-        totalInventory: { value: totalInventory, link: '/inventory' },
-        totalCustomers: { value: totalCustomers, link: '/customers' },
-        itemsReceived: { value: received, link: '/inventory?status=Received' },
-        itemsInWarehouse: { value: inWarehouse, link: '/inventory?status=In Warehouse' },
-        warehouseOccupancyPercent: { value: occupancyPercent, link: '/warehouse' },
-        underRefurbishment: { value: underRefurbishment, link: '/inventory?status=Under Refurbishment' },
-        availableForSale: { value: availableForSale, link: '/inventory?status=Available for Sale' },
-        pendingApprovals: { value: pendingApprovals, link: '/approvals' },
-        totalSales: { value: convertedProposals.length, link: '/sales?status=Converted' },
-        totalSalesValue: { value: Math.round(totalSalesValue * 100) / 100, link: '/sales?status=Converted' },
-        accumulatedRental: { value: Math.round(totalRental * 100) / 100, link: '/warehouse/rental-report' },
-        refurbishmentExpense: { value: expenseTotals['Refurbishment'] || 0, link: '/reports/expenses?category=Refurbishment' },
-        marketingExpense: { value: expenseTotals['Marketing'] || 0, link: '/reports/expenses?category=Marketing' },
-        logisticsExpense: {
-          value: (expenseTotals['Inbound Logistics'] || 0) + (expenseTotals['Outbound Logistics'] || 0),
-          link: '/reports/expenses',
-        },
-        totalInventoryCost: { value: Math.round(totalInventoryCost * 100) / 100, link: '/reports/cost-sheet' },
+  const data = {
+    cards: {
+      totalInventory: { value: totalInventory, link: '/inventory' },
+      totalCustomers: { value: totalCustomers, link: '/customers' },
+      itemsReceived: { value: received, link: '/inventory?status=Received' },
+      itemsInWarehouse: { value: inWarehouse, link: '/inventory?status=In Warehouse' },
+      warehouseOccupancyPercent: { value: occupancyPercent, link: '/warehouse' },
+      underRefurbishment: { value: underRefurbishment, link: '/inventory?status=Under Refurbishment' },
+      availableForSale: { value: availableForSale, link: '/inventory?status=Available for Sale' },
+      pendingApprovals: { value: pendingApprovals, link: '/approvals' },
+      totalSales: { value: convertedProposals.length, link: '/sales?status=Converted' },
+      totalSalesValue: { value: Math.round(totalSalesValue * 100) / 100, link: '/sales?status=Converted' },
+      accumulatedRental: { value: Math.round(totalRental * 100) / 100, link: '/warehouse/rental-report' },
+      refurbishmentExpense: { value: expenseTotals['Refurbishment'] || 0, link: '/reports/expenses?category=Refurbishment' },
+      marketingExpense: { value: expenseTotals['Marketing'] || 0, link: '/reports/expenses?category=Marketing' },
+      logisticsExpense: {
+        value: (expenseTotals['Inbound Logistics'] || 0) + (expenseTotals['Outbound Logistics'] || 0),
+        link: '/reports/expenses',
       },
-      charts: {
-        itemsByStatus: Object.entries(statusCounts).map(([status, count]) => ({ status, count })),
-        expensesByCategory: Object.entries(expenseTotals).map(([category, total]) => ({ category, total })),
-      },
-      recentActivity: recentAudit,
-      pendingTasks: {
-        pendingApprovals,
-        pendingRefurbishmentJobs: pendingRefurbJobs,
-      },
+      totalInventoryCost: { value: Math.round(totalInventoryCost * 100) / 100, link: '/reports/cost-sheet' },
     },
-  });
+    charts: {
+      itemsByStatus: Object.entries(statusCounts).map(([status, count]) => ({ status, count })),
+      expensesByCategory: Object.entries(expenseTotals).map(([category, total]) => ({ category, total })),
+    },
+    recentActivity: recentAudit,
+    pendingTasks: {
+      pendingApprovals,
+      pendingRefurbishmentJobs: pendingRefurbJobs,
+    },
+  };
+
+  // Each figure is only shown to the roles allowed to view the report it
+  // summarizes (see REPORT_ACCESS). Lists are emptied rather than removed so
+  // the response shape stays stable.
+  const role = req.user.role;
+  if (!REPORT_ACCESS.sales.includes(role)) {
+    delete data.cards.totalSalesValue;
+  }
+  if (!REPORT_ACCESS.costs.includes(role)) {
+    for (const key of ['accumulatedRental', 'refurbishmentExpense', 'marketingExpense', 'logisticsExpense', 'totalInventoryCost']) {
+      delete data.cards[key];
+    }
+    data.charts.expensesByCategory = [];
+  }
+  if (!REPORT_ACCESS.audit.includes(role)) {
+    data.recentActivity = [];
+  }
+  data.access = {
+    expenses: REPORT_ACCESS.costs.includes(role),
+    recentActivity: REPORT_ACCESS.audit.includes(role),
+  };
+
+  res.json({ success: true, data });
 });
 
 module.exports = { getDashboard };

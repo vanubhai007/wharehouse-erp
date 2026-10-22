@@ -85,6 +85,7 @@ export default function Dashboard() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        {data.access?.expenses !== false && (
         <div className="card">
           <h3>Expenses by Category</h3>
           <ResponsiveContainer width="100%" height={280}>
@@ -99,9 +100,11 @@ export default function Dashboard() {
             </PieChart>
           </ResponsiveContainer>
         </div>
+        )}
       </div>
 
       <div className="form-grid">
+        {data.access?.recentActivity !== false && (
         <div className="card">
           <h3>Recent Activity</h3>
           {data.recentActivity.length === 0 ? (
@@ -117,6 +120,7 @@ export default function Dashboard() {
             </ul>
           )}
         </div>
+        )}
         <div className="card">
           <h3>Pending Tasks</h3>
           <p>

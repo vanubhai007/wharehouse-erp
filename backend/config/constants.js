@@ -17,6 +17,17 @@ const ALL_ROLES = Object.values(ROLES);
 // Roles allowed to approve a sale proposal on behalf of an owner.
 const APPROVAL_ROLES = [ROLES.OWNER_APPROVER, ROLES.ADMIN];
 
+// Roles allowed to view each group of reports (and the matching dashboard
+// figures). Based on who manages the underlying data, plus Owner/Approver
+// for oversight. Mirrored in frontend/src/pages/reports/ReportsHub.jsx.
+const REPORT_ACCESS = {
+  operational: ALL_ROLES,
+  costs: [ROLES.ADMIN, ROLES.WAREHOUSE_MANAGER, ROLES.ACCOUNTS, ROLES.OWNER_APPROVER],
+  sales: [ROLES.ADMIN, ROLES.ACCOUNTS, ROLES.SALES_MANAGER, ROLES.OWNER_APPROVER],
+  finance: [ROLES.ADMIN, ROLES.ACCOUNTS, ROLES.OWNER_APPROVER],
+  audit: [ROLES.ADMIN],
+};
+
 const ITEM_STATUS = [
   'Handover Pending',
   'Received',
@@ -105,6 +116,7 @@ module.exports = {
   ROLES,
   ALL_ROLES,
   APPROVAL_ROLES,
+  REPORT_ACCESS,
   ITEM_STATUS,
   ITEM_STATUS_TRANSITIONS,
   EXPENSE_CATEGORIES,

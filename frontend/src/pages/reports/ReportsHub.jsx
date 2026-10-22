@@ -4,10 +4,23 @@ import { apiErrorMessage, downloadAuthenticated } from '../../api/client';
 import { LoadingState, ErrorState, EmptyState } from '../../components/common/States';
 import StatusBadge from '../../components/common/StatusBadge';
 import { formatCurrency, formatDate } from '../../utils/format';
+import { useAuth } from '../../context/AuthContext';
+import { ROLES, ALL_ROLES } from '../../utils/constants';
+
+// Mirrors REPORT_ACCESS in backend/config/constants.js. The backend enforces
+// access; this only hides tabs the current role cannot open.
+const REPORT_ROLES = {
+  operational: ALL_ROLES,
+  costs: [ROLES.ADMIN, ROLES.WAREHOUSE_MANAGER, ROLES.ACCOUNTS, ROLES.OWNER_APPROVER],
+  sales: [ROLES.ADMIN, ROLES.ACCOUNTS, ROLES.SALES_MANAGER, ROLES.OWNER_APPROVER],
+  finance: [ROLES.ADMIN, ROLES.ACCOUNTS, ROLES.OWNER_APPROVER],
+  audit: [ROLES.ADMIN],
+};
 
 const REPORTS = [
   {
     key: 'inventory', label: 'Current Inventory', path: '/reports/inventory', fetch: reportApi.inventory, csv: true,
+    roles: REPORT_ROLES.operational,
     columns: [
       { header: 'Item ID', cell: (r) => r.itemId },
       { header: 'Name', cell: (r) => r.name },
@@ -19,6 +32,7 @@ const REPORTS = [
   },
   {
     key: 'cost-sheet', label: 'Item-wise Cost Sheet', path: '/reports/cost-sheet', fetch: reportApi.costSheet, csv: true,
+    roles: REPORT_ROLES.costs,
     rows: (data) => data,
     columns: [
       { header: 'Item', cell: (r) => `${r.item.itemId} - ${r.item.name}` },
@@ -32,6 +46,7 @@ const REPORTS = [
   },
   {
     key: 'expenses', label: 'Expense Report', path: '/reports/expenses', fetch: reportApi.expenses, csv: true,
+    roles: REPORT_ROLES.costs,
     rows: (data) => data.expenses,
     columns: [
       { header: 'Date', cell: (r) => formatDate(r.date) },
@@ -44,6 +59,7 @@ const REPORTS = [
   },
   {
     key: 'refurbishment', label: 'Refurbishment Report', path: '/reports/refurbishment', fetch: reportApi.refurbishment,
+    roles: REPORT_ROLES.operational,
     columns: [
       { header: 'Item', cell: (r) => r.item?.itemId },
       { header: 'Work', cell: (r) => r.workDescription },
@@ -54,6 +70,7 @@ const REPORTS = [
   },
   {
     key: 'sales', label: 'Sales Report', path: '/reports/sales', fetch: reportApi.sales, csv: true,
+    roles: REPORT_ROLES.sales,
     rows: (data) => data.proposals,
     columns: [
       { header: 'Proposal #', cell: (r) => r.proposalNumber },
@@ -66,6 +83,7 @@ const REPORTS = [
   },
   {
     key: 'pending-approvals', label: 'Pending Approvals', path: '/reports/pending-approvals', fetch: reportApi.pendingApprovals,
+    roles: REPORT_ROLES.operational,
     columns: [
       { header: 'Proposal #', cell: (r) => r.saleProposal?.proposalNumber },
       { header: 'Requested', cell: (r) => formatDate(r.requestedAt) },
@@ -74,6 +92,7 @@ const REPORTS = [
   },
   {
     key: 'outstanding', label: 'Outstanding Payments', path: '/reports/outstanding-payments', fetch: reportApi.outstandingPayments, csv: true,
+    roles: REPORT_ROLES.finance,
     rows: (data) => data.invoices,
     columns: [
       { header: 'Invoice #', cell: (r) => r.invoiceNumber },
@@ -86,6 +105,7 @@ const REPORTS = [
   },
   {
     key: 'settlements', label: 'Commission & Settlement', path: '/reports/settlements', fetch: reportApi.settlements,
+    roles: REPORT_ROLES.finance,
     rows: (data) => data.settlements,
     columns: [
       { header: 'Item', cell: (r) => r.item?.itemId },
@@ -97,6 +117,7 @@ const REPORTS = [
   },
   {
     key: 'dispatch', label: 'Dispatch Report', path: '/reports/dispatch', fetch: reportApi.dispatch,
+    roles: REPORT_ROLES.operational,
     columns: [
       { header: 'Dispatch #', cell: (r) => r.dispatchNumber },
       { header: 'Item', cell: (r) => r.item?.itemId },
@@ -106,6 +127,7 @@ const REPORTS = [
   },
   {
     key: 'audit', label: 'Audit / Activity Log', path: '/reports/audit', fetch: reportApi.audit,
+    roles: REPORT_ROLES.audit,
     columns: [
       { header: 'When', cell: (r) => formatDate(r.createdAt) },
       { header: 'Entity', cell: (r) => r.entityType },
@@ -116,7 +138,9 @@ const REPORTS = [
 ];
 
 export default function ReportsHub() {
-  const [active, setActive] = useState(REPORTS[0]);
+  const { user } = useAuth();
+  const visibleReports = REPORTS.filter((r) => r.roles.includes(user?.role));
+  const [active, setActive] = useState(visibleReports[0]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -152,7 +176,7 @@ export default function ReportsHub() {
       </div>
 
       <div className="toolbar" style={{ flexWrap: 'wrap' }}>
-        {REPORTS.map((r) => (
+        {visibleReports.map((r) => (
           <button key={r.key} className={`btn btn-sm ${active.key === r.key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActive(r)}>
             {r.label}
           </button>
