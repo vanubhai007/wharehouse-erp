@@ -83,7 +83,10 @@ copy .env.example .env
 :: Default VITE_API_URL=http://localhost:5000/api is correct for local development.
 cd ..
 
-:: 4. (Optional) Seed demo data - creates one user per role and sample records
+:: 4. (Optional) Seed demo data into an EMPTY development database - creates one user per role
+::    and sample records. First set SEED_ADMIN_PASSWORD in backend\.env to your own password
+::    (12+ characters). The script refuses to run in production, with the placeholder password,
+::    or against a database that already has users.
 npm run seed
 ```
 
@@ -105,10 +108,12 @@ npm run dev:frontend
 Open **http://localhost:5173** in your browser. Leave both Command Prompt windows open while you use
 the app; closing either one stops that server.
 
-- If you ran the seed script, log in with `admin@hrwarehouse.com` / `ChangeMe123!` (see the seed script
-  output for the other role logins).
+- If you ran the seed script, log in as `admin@hrwarehouse.com` (or your `SEED_ADMIN_EMAIL`) with the
+  `SEED_ADMIN_PASSWORD` you set. The other role accounts get random passwords that the seed script
+  prints **once** - save them from its output.
 - If you did **not** seed, go to **http://localhost:5173/setup** to create the first Admin account
-  (the API only allows this once - when the `users` collection is empty).
+  (the API only allows this once - when the `users` collection is empty). Locally (`NODE_ENV=development`)
+  no setup token is needed unless you set `SETUP_TOKEN`.
 
 ### Running backend tests
 
@@ -153,7 +158,8 @@ This runs two kinds of tests:
 | `FRONTEND_URL` | **Yes** | Used for CORS and for building password-reset links. In production, set this to your deployed frontend URL. |
 | `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USER` / `EMAIL_PASS` / `EMAIL_FROM` | Optional | SMTP email provider. Without these, notifications run in demo mode (see §8). |
 | `WHATSAPP_API_URL` / `WHATSAPP_API_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` | Optional | WhatsApp Business API provider. Without these, notifications run in demo mode. |
-| `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Optional | Used only by `npm run seed` |
+| `SETUP_TOKEN` | **Yes in production** | Secret required by the `/setup` page to create the first Admin. Enforced whenever it is set; without it, first-Admin setup only works when `NODE_ENV` is `development` or `test`. Remove it once the first Admin exists. |
+| `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Optional | Used only by `npm run seed` (development only). The password must be your own, 12+ characters - the placeholder is refused - and is never printed. |
 
 ### `frontend/.env`
 
@@ -329,12 +335,19 @@ Already covered in §2. Same credentials for local and deployed backend.
 5. Go back to Render and update `FRONTEND_URL` to this Vercel URL, then redeploy the backend so CORS
    allows it.
 
-### Seeding production data
-Run the seed script once against the production database if you want starter data:
-```
-MONGO_URI="<your atlas uri>" SEED_ADMIN_EMAIL=you@company.com SEED_ADMIN_PASSWORD='StrongPass!23' node backend/seed/seed.js
-```
-Or simply use `/setup` on the deployed frontend to create the first Admin account.
+### Creating the first Admin in production
+The seed script is for development only and refuses to run when `NODE_ENV=production`. To create the
+first Admin on a new production database:
+
+1. On Render, set `SETUP_TOKEN` to a long random value (for example the output of
+   `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) and redeploy.
+2. Open `/setup` on the deployed frontend and enter the name, email, password and that setup token.
+3. After the Admin account exists, remove `SETUP_TOKEN` from Render. Setup is closed permanently once
+   any user exists; it can only succeed once, even if several requests arrive at the same time.
+
+Without `SETUP_TOKEN`, `/setup` is disabled in production. If setup was interrupted before the Admin
+account was created and stays locked, delete the `admin-bootstrap` document from the `counters`
+collection and try again.
 
 ---
 

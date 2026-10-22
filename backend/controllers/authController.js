@@ -1,5 +1,7 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { Counter } = require('../models/Counter');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { recordAudit } = require('../utils/audit');
@@ -11,16 +13,63 @@ function signAccessToken(user) {
   });
 }
 
-// First-run bootstrap: if there are zero users in the system, allow creating
-// the first Admin without authentication. After that, only an existing
-// Admin can create more users (see userController.js).
-const register = asyncHandler(async (req, res) => {
-  const existingUserCount = await User.countDocuments();
-  if (existingUserCount > 0) {
-    throw ApiError.forbidden('Registration is closed. Ask an Admin to create your account.');
+const REGISTRATION_CLOSED = 'Registration is closed. Ask an Admin to create your account.';
+
+// One-time claim document in the counters collection; its unique _id means
+// only one request can ever insert it.
+const SETUP_CLAIM_ID = 'admin-bootstrap';
+
+function setupTokenMatches(provided, expected) {
+  // Hash both sides so the constant-time comparison always sees equal lengths.
+  const a = crypto.createHash('sha256').update(provided).digest();
+  const b = crypto.createHash('sha256').update(expected).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+// Initial setup requires SETUP_TOKEN whenever it is configured. Without it,
+// setup is only allowed in an explicitly development/test environment.
+function assertSetupAllowed(req) {
+  const expected = process.env.SETUP_TOKEN;
+  if (expected) {
+    const provided = req.body.setupToken;
+    if (typeof provided !== 'string' || !setupTokenMatches(provided, expected)) {
+      throw ApiError.forbidden('A valid setup token is required to create the first Admin account.');
+    }
+    return;
   }
+  if (!['development', 'test'].includes(process.env.NODE_ENV)) {
+    throw ApiError.forbidden('Initial setup is disabled. Set SETUP_TOKEN on the server to enable it.');
+  }
+}
+
+// First-run bootstrap: if there are zero users in the system, allow creating
+// the first Admin (with the setup token in production). After that, only an
+// existing Admin can create more users (see userController.js).
+const register = asyncHandler(async (req, res) => {
+  if (await User.exists({})) throw ApiError.forbidden(REGISTRATION_CLOSED);
+  assertSetupAllowed(req);
+
+  // Claim the one-time setup slot. Concurrent requests race on the unique
+  // _id, so exactly one succeeds; the random nonce identifies the owner.
+  const nonce = crypto.randomInt(1, 2 ** 47);
+  try {
+    await Counter.create({ _id: SETUP_CLAIM_ID, seq: nonce });
+  } catch (err) {
+    if (err.code === 11000) throw ApiError.forbidden(REGISTRATION_CLOSED);
+    throw err;
+  }
+  if (await User.exists({})) throw ApiError.forbidden(REGISTRATION_CLOSED);
+
   const { name, email, password } = req.body;
-  const user = await User.create({ name, email, password, role: 'Admin' });
+  let user;
+  try {
+    user = await User.create({ name, email, password, role: 'Admin' });
+  } catch (err) {
+    // Release only this request's own claim, and only while no user exists,
+    // so a failed attempt can never reopen setup after an Admin was created.
+    if (!(await User.exists({}))) await Counter.deleteOne({ _id: SETUP_CLAIM_ID, seq: nonce });
+    throw err;
+  }
   await recordAudit({ entityType: 'User', entityId: user._id, action: 'CREATE', user, toValue: { role: 'Admin', bootstrap: true } });
   const token = signAccessToken(user);
   res.status(201).json({ success: true, data: { user: user.toSafeJSON(), token } });

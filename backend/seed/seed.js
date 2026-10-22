@@ -3,9 +3,13 @@
 // Creates one user per role, sample customers/buyers, warehouse locations,
 // items across several lifecycle stages, expenses, a refurbishment job, a
 // full sale -> approval -> invoice -> payment -> dispatch chain, and the
-// default Settings document. Safe to re-run: it skips creation if the
-// admin user already exists.
-require('dotenv').config();
+// default Settings document.
+//
+// Safety: it refuses to run when NODE_ENV is "production" (checked before
+// connecting), requires a real SEED_ADMIN_PASSWORD, and only ever fills an
+// empty database - it skips any database that already contains users. Demo
+// accounts get random passwords printed once; the Admin password is never printed.
+const crypto = require('crypto');
 const mongoose = require('mongoose');
 const connectDB = require('../config/db');
 
@@ -22,26 +26,71 @@ const Settings = require('../models/Settings');
 
 const { generateCustomerId, generateBuyerId, generateItemId, generateYearlyId } = require('../utils/idGenerator');
 
-async function run() {
-  await connectDB();
+const PLACEHOLDER_ADMIN_PASSWORD = 'ChangeMe123!';
+const MIN_ADMIN_PASSWORD_LENGTH = 12;
 
-  const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@hrwarehouse.com';
-  const existingAdmin = await User.findOne({ email: adminEmail });
-  if (existingAdmin) {
-    console.log(`Seed skipped: admin user ${adminEmail} already exists. Delete it first to reseed.`);
-    await mongoose.disconnect();
-    return;
+// Returns a reason to refuse seeding, or null when it is safe to continue.
+// Runs before any database connection is opened.
+function checkSeedPreconditions(env) {
+  if (env.NODE_ENV === 'production') {
+    return 'Refusing to seed: NODE_ENV is "production". The seed script is for development databases only.';
   }
+  const password = env.SEED_ADMIN_PASSWORD;
+  if (!password) return 'Refusing to seed: set SEED_ADMIN_PASSWORD in backend/.env first.';
+  if (password === PLACEHOLDER_ADMIN_PASSWORD) {
+    return 'Refusing to seed: SEED_ADMIN_PASSWORD is still the example placeholder. Choose your own password.';
+  }
+  if (password.length < MIN_ADMIN_PASSWORD_LENGTH) {
+    return `Refusing to seed: SEED_ADMIN_PASSWORD must be at least ${MIN_ADMIN_PASSWORD_LENGTH} characters.`;
+  }
+  return null;
+}
+
+// 16 random URL-safe characters, generated fresh for every seed run.
+function generateDemoPassword() {
+  return crypto.randomBytes(12).toString('base64url');
+}
+
+// Returns the process exit code: 1 when refused, 0 when seeded or skipped.
+async function run() {
+  const problem = checkSeedPreconditions(process.env);
+  if (problem) {
+    console.error(problem);
+    return 1;
+  }
+
+  await connectDB();
+  try {
+    if (await User.exists({})) {
+      console.log('Seed skipped: the database already contains users. The seed script only fills an empty database.');
+      return 0;
+    }
+    await seedDatabase();
+    return 0;
+  } finally {
+    await mongoose.disconnect();
+  }
+}
+
+async function seedDatabase() {
+  const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@hrwarehouse.com';
+  const demoPasswords = {
+    manager: generateDemoPassword(),
+    staff: generateDemoPassword(),
+    accounts: generateDemoPassword(),
+    sales: generateDemoPassword(),
+    approver: generateDemoPassword(),
+  };
 
   await Settings.getSettings();
 
   console.log('Creating users...');
-  const admin = await User.create({ name: 'Admin User', email: adminEmail, password: process.env.SEED_ADMIN_PASSWORD || 'ChangeMe123!', role: 'Admin' });
-  const manager = await User.create({ name: 'Warehouse Manager', email: 'manager@hrwarehouse.com', password: 'Manager123!', role: 'Warehouse Manager', createdBy: admin._id });
-  const staff = await User.create({ name: 'Warehouse Staff', email: 'staff@hrwarehouse.com', password: 'Staff123!', role: 'Warehouse Staff', createdBy: admin._id });
-  const accounts = await User.create({ name: 'Accounts User', email: 'accounts@hrwarehouse.com', password: 'Accounts123!', role: 'Accounts', createdBy: admin._id });
-  const salesManager = await User.create({ name: 'Sales Manager', email: 'sales@hrwarehouse.com', password: 'Sales123!', role: 'Sales/Buyer Manager', createdBy: admin._id });
-  const approver = await User.create({ name: 'Owner Approver', email: 'approver@hrwarehouse.com', password: 'Approver123!', role: 'Owner/Approver', createdBy: admin._id });
+  const admin = await User.create({ name: 'Admin User', email: adminEmail, password: process.env.SEED_ADMIN_PASSWORD, role: 'Admin' });
+  const manager = await User.create({ name: 'Warehouse Manager', email: 'manager@hrwarehouse.com', password: demoPasswords.manager, role: 'Warehouse Manager', createdBy: admin._id });
+  const staff = await User.create({ name: 'Warehouse Staff', email: 'staff@hrwarehouse.com', password: demoPasswords.staff, role: 'Warehouse Staff', createdBy: admin._id });
+  const accounts = await User.create({ name: 'Accounts User', email: 'accounts@hrwarehouse.com', password: demoPasswords.accounts, role: 'Accounts', createdBy: admin._id });
+  const salesManager = await User.create({ name: 'Sales Manager', email: 'sales@hrwarehouse.com', password: demoPasswords.sales, role: 'Sales/Buyer Manager', createdBy: admin._id });
+  const approver = await User.create({ name: 'Owner Approver', email: 'approver@hrwarehouse.com', password: demoPasswords.approver, role: 'Owner/Approver', createdBy: admin._id });
 
   console.log('Creating warehouse locations...');
   const zoneA1 = await WarehouseLocation.create({ code: 'A-01-R1-B1', warehouseName: 'Main Warehouse', zone: 'A', aisle: '01', rack: 'R1', bin: 'B1', areaSqFt: 100, ratePerSqFtPerMonth: 12 });
@@ -173,20 +222,26 @@ async function run() {
 
   console.log('Seed complete.');
   console.log('----------------------------------------------------');
-  console.log('Login with:');
-  console.log(`  Admin:            ${adminEmail} / ${process.env.SEED_ADMIN_PASSWORD || 'ChangeMe123!'}`);
-  console.log('  Warehouse Manager: manager@hrwarehouse.com / Manager123!');
-  console.log('  Warehouse Staff:   staff@hrwarehouse.com / Staff123!');
-  console.log('  Accounts:          accounts@hrwarehouse.com / Accounts123!');
-  console.log('  Sales Manager:     sales@hrwarehouse.com / Sales123!');
-  console.log('  Owner Approver:    approver@hrwarehouse.com / Approver123!');
+  console.log('Login with (demo passwords are random and shown only this once - save them now):');
+  console.log(`  Admin:             ${adminEmail} / (the SEED_ADMIN_PASSWORD you configured)`);
+  console.log(`  Warehouse Manager: manager@hrwarehouse.com / ${demoPasswords.manager}`);
+  console.log(`  Warehouse Staff:   staff@hrwarehouse.com / ${demoPasswords.staff}`);
+  console.log(`  Accounts:          accounts@hrwarehouse.com / ${demoPasswords.accounts}`);
+  console.log(`  Sales Manager:     sales@hrwarehouse.com / ${demoPasswords.sales}`);
+  console.log(`  Owner Approver:    approver@hrwarehouse.com / ${demoPasswords.approver}`);
   console.log('----------------------------------------------------');
   console.log('A sale proposal is sitting in "Approval Pending" - log in as the Owner Approver to try the approval workflow.');
-
-  await mongoose.disconnect();
 }
 
-run().catch((err) => {
-  console.error('Seed failed:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  // Load backend/.env only when run as a script, never when imported (e.g. by tests).
+  require('dotenv').config();
+  run()
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error('Seed failed:', err);
+      process.exit(1);
+    });
+}
+
+module.exports = { run, checkSeedPreconditions, generateDemoPassword };

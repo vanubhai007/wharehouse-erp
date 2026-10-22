@@ -5,11 +5,13 @@ import { apiErrorMessage } from '../../api/client';
 import './Auth.css';
 
 // First-run bootstrap: creates the very first Admin account. The backend
-// only allows this endpoint to succeed when zero users exist in the system.
+// only allows this endpoint to succeed when zero users exist in the system,
+// and requires the server's SETUP_TOKEN whenever one is configured
+// (always in production).
 export default function Setup() {
   const { bootstrapRegister } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', setupToken: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -18,7 +20,8 @@ export default function Setup() {
     setError('');
     setLoading(true);
     try {
-      await bootstrapRegister({ ...form, role: 'Admin' });
+      const { setupToken, ...account } = form;
+      await bootstrapRegister({ ...account, role: 'Admin', ...(setupToken ? { setupToken } : {}) });
       navigate('/');
     } catch (err) {
       setError(apiErrorMessage(err));
@@ -56,6 +59,16 @@ export default function Setup() {
               minLength={8}
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
+            />
+          </div>
+          <div className="form-field">
+            <label>Setup Token</label>
+            <input
+              type="password"
+              autoComplete="off"
+              placeholder="Required if the server has SETUP_TOKEN set"
+              value={form.setupToken}
+              onChange={(e) => setForm({ ...form, setupToken: e.target.value })}
             />
           </div>
           <button className="btn btn-primary" type="submit" disabled={loading}>
