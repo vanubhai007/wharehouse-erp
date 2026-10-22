@@ -80,4 +80,28 @@ describe('Auth flow', () => {
       .send({ name: 'Another', email: 'another@test.com', password: 'Password123', role: 'Warehouse Staff' });
     expect(res.status).toBe(403);
   });
+
+  test('forgot-password returns the demo reset link in the test environment', async () => {
+    const res = await request(app).post('/api/auth/forgot-password').send({ email: 'admin@test.com' });
+    expect(res.status).toBe(200);
+    expect(res.body.demoMode).toBe(true);
+    expect(res.body.demoResetUrl).toMatch(/\/reset-password\//);
+  });
+
+  test('forgot-password never exposes the reset link in production', async () => {
+    const originalEnv = process.env.NODE_ENV;
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    process.env.NODE_ENV = 'production';
+    try {
+      const known = await request(app).post('/api/auth/forgot-password').send({ email: 'admin@test.com' });
+      const unknown = await request(app).post('/api/auth/forgot-password').send({ email: 'nobody@test.com' });
+      expect(known.status).toBe(200);
+      expect(known.body.demoMode).toBeUndefined();
+      expect(known.body.demoResetUrl).toBeUndefined();
+      expect(known.body).toEqual(unknown.body);
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+      warn.mockRestore();
+    }
+  });
 });

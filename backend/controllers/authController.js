@@ -71,10 +71,16 @@ const forgotPassword = asyncHandler(async (req, res) => {
 
   const response = { success: true, message: 'If that account exists, a reset link has been sent.' };
   // Demo mode (no email provider configured): return the token/link directly
-  // so the flow can still be tested end-to-end.
+  // so the flow can still be tested end-to-end - but only in an explicitly
+  // non-production environment, since this endpoint is unauthenticated.
   if (emailResult.demo) {
-    response.demoMode = true;
-    response.demoResetUrl = resetUrl;
+    const demoAllowed = ['development', 'test'].includes(process.env.NODE_ENV);
+    if (demoAllowed) {
+      response.demoMode = true;
+      response.demoResetUrl = resetUrl;
+    } else {
+      console.warn('Password reset requested but no email provider is configured; reset link was not delivered.');
+    }
   }
   res.json(response);
 });
