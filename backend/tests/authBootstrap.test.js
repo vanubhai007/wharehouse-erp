@@ -1,6 +1,7 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { startTestDb, stopTestDb } = require('./testUtils');
+const { resetRateLimits } = require('../middleware/rateLimit');
 
 let app;
 let User;
@@ -35,6 +36,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  resetRateLimits(); // this file sends many setup requests from one IP on purpose
   // Fresh, empty database for every test (indexes are kept).
   for (const collection of Object.values(mongoose.connection.collections)) await collection.deleteMany({});
 });

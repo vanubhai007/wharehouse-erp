@@ -2,6 +2,7 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const { startTestDb, stopTestDb } = require('./testUtils');
 const { passwordFingerprint } = require('../utils/passwordFingerprint');
+const { resetRateLimits } = require('../middleware/rateLimit');
 
 let app;
 let User;
@@ -23,6 +24,9 @@ beforeAll(async () => {
 afterAll(async () => {
   await stopTestDb();
 });
+
+// This file requests many reset links from one IP on purpose.
+beforeEach(() => resetRateLimits());
 
 const me = (token) => request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`);
 const login = (email, password) => request(app).post('/api/auth/login').send({ email, password });

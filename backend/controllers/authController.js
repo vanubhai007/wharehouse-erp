@@ -7,6 +7,7 @@ const ApiError = require('../utils/ApiError');
 const { recordAudit } = require('../utils/audit');
 const { sendEmail } = require('../services/notificationService');
 const { passwordFingerprint, fingerprintMatches } = require('../utils/passwordFingerprint');
+const { allowResetEmail } = require('../middleware/rateLimit');
 
 // `user` must have its password hash loaded. The pwv claim ties the token to
 // the current password, so changing or resetting it invalidates the token.
@@ -104,12 +105,20 @@ const me = asyncHandler(async (req, res) => {
   res.json({ success: true, data: req.user.toSafeJSON() });
 });
 
+const RESET_LINK_SENT = 'If that account exists, a reset link has been sent.';
+
 const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
+  // Per-email limit, checked before any lookup and counted the same way for
+  // registered and unknown addresses: when exceeded, nothing is sent but the
+  // response is identical, so it reveals nothing about which accounts exist.
+  if (!allowResetEmail(email)) {
+    return res.json({ success: true, message: RESET_LINK_SENT });
+  }
   const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
   // Always respond success to avoid leaking which emails are registered.
   if (!user) {
-    return res.json({ success: true, message: 'If that account exists, a reset link has been sent.' });
+    return res.json({ success: true, message: RESET_LINK_SENT });
   }
   // pwv makes the link single-use: once the password changes, this link (and
   // every other link issued before the change) no longer matches.
@@ -125,7 +134,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
   });
   await recordAudit({ entityType: 'User', entityId: user._id, action: 'PASSWORD_RESET_REQUESTED', user });
 
-  const response = { success: true, message: 'If that account exists, a reset link has been sent.' };
+  const response = { success: true, message: RESET_LINK_SENT };
   // Demo mode (no email provider configured): return the token/link directly
   // so the flow can still be tested end-to-end - but only in an explicitly
   // non-production environment, since this endpoint is unauthenticated.

@@ -158,6 +158,7 @@ This runs two kinds of tests:
 | `FRONTEND_URL` | **Yes** | Used for CORS and for building password-reset links. In production, set this to your deployed frontend URL. |
 | `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USER` / `EMAIL_PASS` / `EMAIL_FROM` | Optional | SMTP email provider. Without these, notifications run in demo mode (see §8). |
 | `WHATSAPP_API_URL` / `WHATSAPP_API_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` | Optional | WhatsApp Business API provider. Without these, notifications run in demo mode. |
+| `TRUST_PROXY` | Production (behind a proxy) | Number of reverse proxies in front of the backend (`0`-`5`), so the login/forgot-password rate limits see the real client IP. Leave empty locally - forwarded headers are then ignored. Use `1` on Render after verifying the proxy setup (see §9). |
 | `SETUP_TOKEN` | **Yes in production** | Secret required by the `/setup` page to create the first Admin. Enforced whenever it is set; without it, first-Admin setup only works when `NODE_ENV` is `development` or `test`. Remove it once the first Admin exists. |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Optional | Used only by `npm run seed` (development only). The password must be your own, 12+ characters - the placeholder is refused - and is never printed. |
 
@@ -324,7 +325,9 @@ Already covered in §2. Same credentials for local and deployed backend.
 4. Add all the environment variables from §3 (`MONGO_URI`, `JWT_SECRET`, `JWT_RESET_SECRET`,
    `CLOUDINARY_*`, `FRONTEND_URL` set to your Vercel frontend URL, optional email/WhatsApp vars).
 5. Render provides a health check path - use `/api/health`.
-6. Deploy. Note the resulting URL, e.g. `https://hrwarehouse-api.onrender.com`.
+6. Set `TRUST_PROXY=1` (Render runs one proxy in front of a single web service). See "Sign-in rate
+   limits" below before changing it.
+7. Deploy. Note the resulting URL, e.g. `https://hrwarehouse-api.onrender.com`.
 
 ### Frontend → Vercel
 1. In Vercel, "Add New..." → "Project" → import the same repo, set **Root Directory** to `frontend`.
@@ -348,6 +351,24 @@ first Admin on a new production database:
 Without `SETUP_TOKEN`, `/setup` is disabled in production. If setup was interrupted before the Admin
 account was created and stays locked, delete the `admin-bootstrap` document from the `counters`
 collection and try again.
+
+### Sign-in rate limits
+The unauthenticated auth endpoints are rate limited (HTTP `429` with a `Retry-After` header):
+
+| Endpoint | Limit |
+|---|---|
+| `POST /api/auth/login` | 5 failed attempts per IP + email, and 50 failed attempts per IP, per 15 minutes. A successful login clears that IP + email counter. |
+| `POST /api/auth/forgot-password` | 5 requests per IP per 15 minutes. Also 3 per email address per hour - beyond that the usual "If that account exists..." response is returned but no email is sent (same response for registered and unknown addresses). |
+| `POST /api/auth/register` (first-Admin setup) | 10 requests per IP per 15 minutes. |
+
+- **Client IP and `TRUST_PROXY`:** limits are keyed by the client IP. Behind Render's proxy the real IP
+  is only in `X-Forwarded-For`, so set `TRUST_PROXY` to the number of proxies in front of the app
+  (`1` for a single Render web service). **Verify this before relying on it:** if it is too low, every
+  user appears to share the proxy's IP and they are limited together; if it is too high, clients can
+  fake their IP and bypass the limits. `true` is never accepted. Leave it empty locally.
+- **Counters are in memory, per server process.** They reset whenever the backend restarts or
+  redeploys, and they are **not shared between instances** - if you scale to more than one instance,
+  move the limits to a shared store (e.g. Redis or a MongoDB TTL collection) first.
 
 ---
 

@@ -3,6 +3,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 
 const { notFound, errorHandler } = require('./middleware/errorHandler');
+const { parseTrustProxy } = require('./middleware/rateLimit');
 
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -25,6 +26,12 @@ const settingsRoutes = require('./routes/settingsRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 
 const app = express();
+
+// Trusted reverse-proxy hops in front of the app (TRUST_PROXY, e.g. 1 on
+// Render) so req.ip - used by the auth rate limits - is the real client.
+// Unset or invalid means X-Forwarded-For is not trusted at all.
+const trustProxyHops = parseTrustProxy(process.env.TRUST_PROXY);
+if (trustProxyHops > 0) app.set('trust proxy', trustProxyHops);
 
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',');
 app.use(
