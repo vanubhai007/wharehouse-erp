@@ -1,5 +1,9 @@
 const ApiError = require('../utils/ApiError');
 
+// Mirrors MAX_FILE_SIZE_MB in middleware/upload.js (not imported, to keep the
+// error handler free of the upload/Cloudinary module's side effects).
+const MAX_FILE_SIZE_MB = 10;
+
 function notFound(req, res) {
   res.status(404).json({ success: false, message: `Route not found: ${req.method} ${req.originalUrl}` });
 }
@@ -22,6 +26,15 @@ function errorHandler(err, req, res, next) { // eslint-disable-line no-unused-va
   } else if (err.name === 'CastError') {
     statusCode = 400;
     message = `Invalid value for '${err.path}'`;
+  } else if (err.name === 'MulterError') {
+    // Upload limits (file size, file count, unexpected field) are client errors.
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      statusCode = 413;
+      message = `File too large (max ${MAX_FILE_SIZE_MB} MB per file)`;
+    } else {
+      statusCode = 400;
+      message = err.code === 'LIMIT_UNEXPECTED_FILE' ? 'Too many files or unexpected file field' : err.message;
+    }
   }
 
   if (statusCode === 500) {

@@ -19,10 +19,12 @@ const uploadFiles = asyncHandler(async (req, res) => {
 // Removes a previously uploaded file from Cloudinary (used by "remove" on an
 // upload control). The caller is responsible for also pulling the file
 // reference out of the owning record's array via its own update endpoint.
+// The publicId has already been validated by canDeleteFile (Express decodes
+// the URL-encoded param once, so it is used as-is here).
 const deleteFile = asyncHandler(async (req, res) => {
   const { publicId } = req.params;
-  await cloudinary.uploader.destroy(decodeURIComponent(publicId), { resource_type: 'image' }).catch(() => {});
-  await cloudinary.uploader.destroy(decodeURIComponent(publicId), { resource_type: 'raw' }).catch(() => {});
+  await cloudinary.uploader.destroy(publicId, { resource_type: 'image' }).catch(() => {});
+  await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' }).catch(() => {});
   res.json({ success: true, message: 'File removed' });
 });
 
