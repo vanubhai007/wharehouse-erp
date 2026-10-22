@@ -62,7 +62,7 @@ export default function RefurbishmentList() {
 
       {showForm && <RefurbishmentForm onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); load(); }} />}
       {selected && (
-        <RefurbishmentDetailModal job={selected} onClose={() => setSelected(null)} onChanged={() => { setSelected(null); load(); }} />
+        <RefurbishmentDetailModal job={selected} onClose={() => { setSelected(null); load(); }} onChanged={() => { setSelected(null); load(); }} />
       )}
     </div>
   );

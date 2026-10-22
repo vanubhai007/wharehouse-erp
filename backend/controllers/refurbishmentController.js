@@ -35,12 +35,17 @@ const createJob = asyncHandler(async (req, res) => {
 const updateJob = asyncHandler(async (req, res) => {
   const job = await Refurbishment.findById(req.params.id);
   if (!job) throw ApiError.notFound('Refurbishment job not found');
-  const { workDescription, assignedTo, repairCost, startDate, notes } = req.body;
+  // Photo lists saved from the detail modal: validated before anything is
+  // changed; each list is only replaced when it is present in the request.
+  sanitizeFileRefs(req.body, { beforePhotos: 'refurbishment', afterPhotos: 'refurbishment' }, job, req.user);
+  const { workDescription, assignedTo, repairCost, startDate, notes, beforePhotos, afterPhotos } = req.body;
   if (workDescription !== undefined) job.workDescription = workDescription;
   if (assignedTo !== undefined) job.assignedTo = assignedTo;
   if (repairCost !== undefined) job.repairCost = repairCost;
   if (startDate !== undefined) job.startDate = startDate;
   if (notes !== undefined) job.notes = notes;
+  if (beforePhotos !== undefined) job.beforePhotos = beforePhotos;
+  if (afterPhotos !== undefined) job.afterPhotos = afterPhotos;
   await job.save();
   res.json({ success: true, data: job });
 });
