@@ -128,6 +128,13 @@ This runs two kinds of tests:
   host, these two suites will fail to start with a clear message explaining why - it is not a code bug.
   See §11 for the actual results observed while building this project.
 
+> **First run is slow:** the first `npm test` on a machine downloads the `mongod` binary (about 57 MB)
+> into `%USERPROFILE%\.cache\mongodb-binaries`, which can take a few minutes and may make the two
+> integration suites time out on that run. Once the download finishes it is cached, and later runs take
+> only seconds. **Do not start two test runs at the same time:** the download is guarded by a lock file,
+> so a second run just waits on the first and times out. If a run seems stuck, close any other running
+> `npm test` / `jest` processes and try again.
+
 ---
 
 ## 3. Required Environment Variables
