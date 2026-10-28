@@ -6,6 +6,8 @@ import Login from './pages/auth/Login';
 import Setup from './pages/auth/Setup';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
+import Register from './pages/auth/Register';
+import VerifyEmail from './pages/auth/VerifyEmail';
 
 import Dashboard from './pages/Dashboard';
 
@@ -56,6 +58,8 @@ export default function App() {
       <Route path="/setup" element={<Setup />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password/:token" element={<ResetPassword />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>

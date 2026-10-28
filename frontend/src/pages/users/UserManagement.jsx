@@ -8,6 +8,16 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { ALL_ROLES } from '../../utils/constants';
 import UserForm from './UserForm';
 
+// Public sign-ups need email verification and an Admin's approval (with a
+// role chosen here) before they can sign in.
+const awaitingDecision = (u) => u.signupSource === 'public' && u.approvalStatus !== 'approved';
+function accountStatus(u) {
+  if (u.signupSource === 'public' && u.emailVerified === false) return 'Unverified';
+  if (u.signupSource === 'public' && u.approvalStatus === 'pending') return 'Pending';
+  if (u.signupSource === 'public' && u.approvalStatus === 'rejected') return 'Rejected';
+  return u.isActive ? 'Active' : 'Inactive';
+}
+
 export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,6 +27,9 @@ export default function UserManagement() {
   const [deactivateTarget, setDeactivateTarget] = useState(null);
   const [resetTarget, setResetTarget] = useState(null);
   const [newPassword, setNewPassword] = useState('');
+  const [approveTarget, setApproveTarget] = useState(null);
+  const [approveRole, setApproveRole] = useState('');
+  const [rejectTarget, setRejectTarget] = useState(null);
 
   function load() {
     setLoading(true);
@@ -41,6 +54,28 @@ export default function UserManagement() {
     } catch (err) {
       alert(apiErrorMessage(err));
       setDeactivateTarget(null);
+    }
+  }
+
+  async function handleApprove() {
+    try {
+      await userApi.approve(approveTarget._id, { role: approveRole });
+      setApproveTarget(null);
+      setApproveRole('');
+      load();
+    } catch (err) {
+      alert(apiErrorMessage(err));
+    }
+  }
+
+  async function handleReject() {
+    try {
+      await userApi.reject(rejectTarget._id);
+      setRejectTarget(null);
+      load();
+    } catch (err) {
+      alert(apiErrorMessage(err));
+      setRejectTarget(null);
     }
   }
 
@@ -73,12 +108,26 @@ export default function UserManagement() {
                 <td>{u.name}</td>
                 <td>{u.email}</td>
                 <td>
-                  <select value={u.role} onChange={(e) => handleRoleChange(u, e.target.value)}>
-                    {ALL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
+                  {awaitingDecision(u) ? (
+                    <span style={{ color: 'var(--color-text-muted)' }}>Chosen on approval</span>
+                  ) : (
+                    <select value={u.role} onChange={(e) => handleRoleChange(u, e.target.value)}>
+                      {ALL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  )}
                 </td>
-                <td><StatusBadge status={u.isActive ? 'Active' : 'Inactive'} /></td>
+                <td><StatusBadge status={accountStatus(u)} /></td>
                 <td>
+                  {awaitingDecision(u) && u.emailVerified !== false && (
+                    <>
+                      <button className="btn btn-sm btn-primary" onClick={() => { setApproveTarget(u); setApproveRole(''); }}>Approve</button>{' '}
+                    </>
+                  )}
+                  {u.signupSource === 'public' && u.approvalStatus === 'pending' && (
+                    <>
+                      <button className="btn btn-sm btn-danger" onClick={() => setRejectTarget(u)}>Reject</button>{' '}
+                    </>
+                  )}
                   <button className="btn btn-sm btn-secondary" onClick={() => setResetTarget(u)}>Reset Password</button>{' '}
                   {u.isActive && <button className="btn btn-sm btn-danger" onClick={() => setDeactivateTarget(u)}>Deactivate</button>}
                 </td>
@@ -98,6 +147,36 @@ export default function UserManagement() {
           danger
           onConfirm={handleDeactivate}
           onCancel={() => setDeactivateTarget(null)}
+        />
+      )}
+
+      {approveTarget && (
+        <Modal title={`Approve ${approveTarget.name}`} onClose={() => setApproveTarget(null)}>
+          <p style={{ marginTop: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>
+            {approveTarget.email} signed up and verified this email address. Choose the role this account should have.
+          </p>
+          <div className="form-field">
+            <label>Role</label>
+            <select value={approveRole} onChange={(e) => setApproveRole(e.target.value)}>
+              <option value="">Select a role...</option>
+              {ALL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button className="btn btn-secondary" onClick={() => setApproveTarget(null)}>Cancel</button>
+            <button className="btn btn-primary" onClick={handleApprove} disabled={!approveRole}>Approve</button>
+          </div>
+        </Modal>
+      )}
+
+      {rejectTarget && (
+        <ConfirmDialog
+          title="Reject sign-up?"
+          message={`Reject the registration of ${rejectTarget.name} (${rejectTarget.email})? They will not be able to sign in.`}
+          confirmLabel="Reject"
+          danger
+          onConfirm={handleReject}
+          onCancel={() => setRejectTarget(null)}
         />
       )}
 

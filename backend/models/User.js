@@ -12,6 +12,28 @@ const userSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    // Public sign-up only. These stay unset for Admin-created users and the
+    // first Admin, who count as verified and approved. A public sign-up can
+    // sign in only once emailVerified is true and approvalStatus is
+    // 'approved' (see utils/accountStatus.js).
+    signupSource: { type: String, enum: ['public'] },
+    emailVerified: { type: Boolean },
+    approvalStatus: { type: String, enum: ['pending', 'approved', 'rejected'] },
+    // Current email verification code: only its HMAC is stored, never the code.
+    emailVerification: {
+      type: new mongoose.Schema(
+        {
+          codeHash: String,
+          expiresAt: Date,
+          attempts: { type: Number, default: 0 },
+          sentAt: Date,
+          windowStart: Date,
+          sendCount: { type: Number, default: 0 },
+        },
+        { _id: false }
+      ),
+      select: false,
+    },
   },
   { timestamps: true }
 );
@@ -29,6 +51,7 @@ userSchema.methods.comparePassword = function comparePassword(candidate) {
 userSchema.methods.toSafeJSON = function toSafeJSON() {
   const obj = this.toObject();
   delete obj.password;
+  delete obj.emailVerification;
   return obj;
 };
 

@@ -153,6 +153,16 @@ function perIpLimiter(counter, message) {
 const forgotPasswordIpLimiter = perIpLimiter(forgotPasswordPerIp, 'Too many password reset requests.');
 const setupLimiter = perIpLimiter(setupPerIp, 'Too many setup attempts.');
 
+// Public sign-up and email verification, per client IP. Each code also allows
+// only 5 attempts and each account at most 5 codes per hour (see
+// services/emailVerificationService.js).
+const signupPerIp = new FixedWindowCounter({ windowMs: 60 * MINUTE, max: 10 });
+const verifyEmailPerIp = new FixedWindowCounter({ windowMs: 15 * MINUTE, max: 20 });
+const resendVerificationPerIp = new FixedWindowCounter({ windowMs: 15 * MINUTE, max: 10 });
+const signupLimiter = perIpLimiter(signupPerIp, 'Too many sign-up attempts.');
+const verifyEmailLimiter = perIpLimiter(verifyEmailPerIp, 'Too many verification attempts.');
+const resendVerificationLimiter = perIpLimiter(resendVerificationPerIp, 'Too many requests for a new code.');
+
 // Per-email forgot-password limit (3 per hour). Counted for every address,
 // registered or not, so the caller can return the same generic response
 // either way. Returns true while a reset email may be sent.
@@ -225,6 +235,9 @@ module.exports = {
   loginLimiter,
   forgotPasswordIpLimiter,
   setupLimiter,
+  signupLimiter,
+  verifyEmailLimiter,
+  resendVerificationLimiter,
   allowResetEmail,
   limitPdfExport,
   limitReportPdfExport,

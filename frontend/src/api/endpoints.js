@@ -7,6 +7,9 @@ export const authApi = {
   me: () => client.get('/auth/me'),
   forgotPassword: (data) => client.post('/auth/forgot-password', data),
   resetPassword: (token, data) => client.post(`/auth/reset-password/${token}`, data),
+  signup: (data) => client.post('/auth/signup', data),
+  verifyEmail: (data) => client.post('/auth/verify-email', data),
+  resendVerification: (data) => client.post('/auth/resend-verification', data),
 };
 
 export const userApi = {
@@ -15,6 +18,8 @@ export const userApi = {
   update: (id, data) => client.put(`/users/${id}`, data),
   resetPassword: (id, data) => client.post(`/users/${id}/reset-password`, data),
   deactivate: (id) => client.post(`/users/${id}/deactivate`),
+  approve: (id, data) => client.post(`/users/${id}/approve`, data),
+  reject: (id) => client.post(`/users/${id}/reject`),
 };
 
 export const customerApi = {

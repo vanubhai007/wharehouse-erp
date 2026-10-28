@@ -9,17 +9,21 @@ export default function Login() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
+  const [needsVerification, setNeedsVerification] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+    setNeedsVerification(false);
     setLoading(true);
     try {
       await login(form.email, form.password);
       navigate('/');
     } catch (err) {
       setError(apiErrorMessage(err));
+      // Sent only after a correct password (see the backend login check).
+      setNeedsVerification(err?.response?.data?.details?.code === 'EMAIL_NOT_VERIFIED');
     } finally {
       setLoading(false);
     }
@@ -31,6 +35,11 @@ export default function Login() {
         <h2>HR Warehouse ERP</h2>
         <p className="auth-subtitle">Sign in to manage assets, warehousing and sales</p>
         {error && <p className="form-error" style={{ marginBottom: 12 }}>{error}</p>}
+        {needsVerification && (
+          <p style={{ marginBottom: 12, fontSize: 13 }}>
+            <Link to={`/verify-email?email=${encodeURIComponent(form.email.trim().toLowerCase())}`}>Enter your verification code</Link>
+          </p>
+        )}
         <form onSubmit={handleSubmit}>
           <div className="form-field">
             <label>
@@ -62,6 +71,8 @@ export default function Login() {
         </form>
         <div className="auth-links">
           <Link to="/forgot-password">Forgot password?</Link>
+          {' · '}
+          <Link to="/register">Create an account</Link>
           {' · '}
           <Link to="/setup">First time setup</Link>
         </div>

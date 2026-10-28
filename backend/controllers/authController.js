@@ -1,13 +1,19 @@
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { Counter } = require('../models/Counter');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { recordAudit } = require('../utils/audit');
-const { sendEmail } = require('../services/notificationService');
+const notifications = require('../services/notificationService');
 const { passwordFingerprint, fingerprintMatches } = require('../utils/passwordFingerprint');
 const { allowResetEmail } = require('../middleware/rateLimit');
+const { signInBlock } = require('../utils/accountStatus');
+const verification = require('../services/emailVerificationService');
+const { ROLES } = require('../config/constants');
+
+const { sendEmail } = notifications;
 
 // `user` must have its password hash loaded. The pwv claim ties the token to
 // the current password, so changing or resetting it invalidates the token.
@@ -89,6 +95,9 @@ const login = asyncHandler(async (req, res) => {
   if (!user.isActive) {
     throw ApiError.forbidden('This account has been disabled. Contact an administrator.');
   }
+  // Checked only after the password, so it reveals nothing about other accounts.
+  const blocked = signInBlock(user);
+  if (blocked) throw new ApiError(403, blocked.message, { code: blocked.code });
   user.lastLoginAt = new Date();
   await user.save();
   const token = signAccessToken(user);
@@ -176,4 +185,112 @@ const resetPassword = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Password has been reset. You can now log in.' });
 });
 
-module.exports = { register, login, logout, me, forgotPassword, resetPassword };
+// ---------------------------------------------------------------------------
+// Public sign-up with email verification. A new account starts unverified and
+// pending approval, with a placeholder role it can never use: it cannot sign
+// in until the emailed code is verified AND an Admin approves it and chooses
+// its role (userController.approveUser). Responses never reveal whether an
+// email address is registered, and codes never appear in responses or logs.
+// ---------------------------------------------------------------------------
+
+// Stored until an Admin approves the account and picks the real role.
+const PENDING_PLACEHOLDER_ROLE = ROLES.WAREHOUSE_STAFF;
+const SIGNUP_UNAVAILABLE = 'Registration is temporarily unavailable. Please try again later.';
+const SIGNUP_SENT = 'If this email address can be registered, we have sent a 6-digit verification code to it. Enter the code to verify your email.';
+const RESEND_SENT = 'If a verification is pending for this email address, a new code has been sent. Codes expire after 10 minutes.';
+const INVALID_CODE = 'That code is invalid or has expired. Check your latest email or request a new code.';
+const COOLDOWN_SECONDS = verification.RESEND_COOLDOWN_MS / 1000;
+// Compared against when no account matches, so every request does the same work.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
+
+// Sign-up needs a working email provider (to deliver the code) and an Admin
+// (to approve accounts - this also keeps first-Admin setup available).
+async function assertSignupAvailable() {
+  const adminExists = await User.exists({ role: ROLES.ADMIN, isActive: true, approvalStatus: { $nin: ['pending', 'rejected'] } });
+  if (!notifications.emailConfigured || !adminExists) throw new ApiError(503, SIGNUP_UNAVAILABLE);
+}
+
+const signup = asyncHandler(async (req, res) => {
+  await assertSignupAvailable();
+  // Only these fields are read: role, isActive, approval and verification
+  // fields in the request are ignored.
+  const { name, email, password } = req.body;
+  const respond = () => res.status(202).json({ success: true, message: SIGNUP_SENT, resendCooldownSeconds: COOLDOWN_SECONDS });
+
+  const existing = await User.findOne({ email }).select('+password +emailVerification');
+  if (existing && existing.emailVerified !== false) {
+    // Already registered (verified, or an Admin-created user): change nothing
+    // and send nothing, after the same password-hashing work as a new sign-up.
+    await bcrypt.hash(password, 10);
+    return respond();
+  }
+
+  let user = existing;
+  if (user) {
+    // An unfinished sign-up: the latest details win. Verifying still needs
+    // the code from this inbox together with this password.
+    user.name = name;
+    user.password = password;
+  } else {
+    user = new User({ name, email, password, role: PENDING_PLACEHOLDER_ROLE, signupSource: 'public', emailVerified: false, approvalStatus: 'pending' });
+  }
+  const issued = verification.prepareCode(user);
+  if (issued) user.emailVerification = issued.fields;
+  try {
+    await user.save();
+  } catch (err) {
+    if (err.code === 11000) return respond(); // a parallel sign-up for the same email won
+    throw err;
+  }
+  if (!existing) await recordAudit({ entityType: 'User', entityId: user._id, action: 'SIGNUP', user, toValue: { signupSource: 'public' } });
+  if (issued) verification.sendCodeEmail(user, issued.code);
+  return respond();
+});
+
+const verifyEmail = asyncHandler(async (req, res) => {
+  const { email, code, password } = req.body;
+  const user = await User.findOne({ email }).select('+password +emailVerification');
+  const pending = user && user.emailVerified === false && user.emailVerification && user.emailVerification.codeHash;
+  const passwordOk = await bcrypt.compare(password, pending ? user.password : DUMMY_PASSWORD_HASH);
+  if (!pending) throw ApiError.badRequest(INVALID_CODE);
+
+  const current = user.emailVerification;
+  if (current.expiresAt.getTime() <= Date.now()) throw ApiError.badRequest(INVALID_CODE);
+  // Take one attempt atomically before checking, so parallel guesses cannot
+  // exceed the limit; a used or replaced code no longer matches the filter.
+  const attempt = await User.updateOne(
+    { _id: user._id, emailVerified: false, 'emailVerification.codeHash': current.codeHash, 'emailVerification.attempts': { $lt: verification.MAX_ATTEMPTS_PER_CODE } },
+    { $inc: { 'emailVerification.attempts': 1 } }
+  );
+  if (attempt.modifiedCount !== 1 || !passwordOk || !verification.codeMatches(current.codeHash, user._id, code)) {
+    throw ApiError.badRequest(INVALID_CODE);
+  }
+  // Single use: only the request that clears this exact code succeeds.
+  const done = await User.updateOne(
+    { _id: user._id, emailVerified: false, 'emailVerification.codeHash': current.codeHash },
+    { $set: { emailVerified: true }, $unset: { emailVerification: 1 } }
+  );
+  if (done.modifiedCount !== 1) throw ApiError.badRequest(INVALID_CODE);
+  await recordAudit({ entityType: 'User', entityId: user._id, action: 'EMAIL_VERIFIED', user });
+  res.json({ success: true, message: 'Your email is verified. An administrator will review your registration - you can sign in once it is approved.' });
+});
+
+const resendVerification = asyncHandler(async (req, res) => {
+  await assertSignupAvailable();
+  const user = await User.findOne({ email: req.body.email }).select('+emailVerification');
+  if (user && user.emailVerified === false) {
+    const issued = verification.prepareCode(user);
+    if (issued) {
+      // Only if no other request issued a code in the meantime.
+      const previousSentAt = user.emailVerification ? user.emailVerification.sentAt : undefined;
+      const updated = await User.updateOne(
+        { _id: user._id, emailVerified: false, 'emailVerification.sentAt': previousSentAt === undefined ? { $exists: false } : previousSentAt },
+        { $set: { emailVerification: issued.fields } }
+      );
+      if (updated.modifiedCount === 1) verification.sendCodeEmail(user, issued.code);
+    }
+  }
+  res.json({ success: true, message: RESEND_SENT, resendCooldownSeconds: COOLDOWN_SECONDS });
+});
+
+module.exports = { register, login, logout, me, forgotPassword, resetPassword, signup, verifyEmail, resendVerification };

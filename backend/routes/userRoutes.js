@@ -15,5 +15,7 @@ router.get('/:id', ctrl.getUser);
 router.put('/:id', ctrl.updateUser);
 router.post('/:id/reset-password', ctrl.resetUserPassword);
 router.post('/:id/deactivate', ctrl.deactivateUser);
+router.post('/:id/approve', ctrl.approveUser);
+router.post('/:id/reject', ctrl.rejectUser);
 
 module.exports = router;

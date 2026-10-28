@@ -156,7 +156,7 @@ This runs two kinds of tests:
 | `JWT_RESET_EXPIRES_IN` | No (default `15m`) | Reset link lifetime |
 | `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Needed for uploads | Without these, every upload endpoint returns a clear "storage not configured" error instead of failing silently |
 | `FRONTEND_URL` | **Yes** | Used for CORS and for building password-reset links. In production, set this to your deployed frontend URL. |
-| `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USER` / `EMAIL_PASS` / `EMAIL_FROM` | Optional | SMTP email provider. Without these, notifications run in demo mode (see §8). |
+| `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USER` / `EMAIL_PASS` / `EMAIL_FROM` | **Yes for public sign-up**, otherwise optional | SMTP email provider (e.g. Gmail - see §8). Public sign-up emails verification codes, so `/register` sign-ups are unavailable until these are set. Without them, other notifications run in demo mode. |
 | `WHATSAPP_API_URL` / `WHATSAPP_API_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` | Optional | WhatsApp Business API provider. Without these, notifications run in demo mode. |
 | `TRUST_PROXY` | Production (behind a proxy) | Number of reverse proxies in front of the backend (`0`-`5`), so the login/forgot-password rate limits see the real client IP. Leave empty locally - forwarded headers are then ignored. Use `1` on Render after verifying the proxy setup (see §9). |
 | `SETUP_TOKEN` | **Yes in production** | Secret required by the `/setup` page to create the first Admin. Enforced whenever it is set; without it, first-Admin setup only works when `NODE_ENV` is `development` or `test`. Remove it once the first Admin exists. |
@@ -185,6 +185,10 @@ This runs two kinds of tests:
 
 Every write endpoint on the backend is re-validated by role - the frontend only hides buttons the
 user's role cannot use; it is never the only line of defense.
+
+**Public sign-ups never choose their own role.** Someone who registers at `/register` cannot sign in
+until they have verified their email address **and** an Admin has approved the account in User
+Management, choosing its role there (see §8). Any role or status sent with the sign-up is ignored.
 
 ---
 
@@ -340,6 +344,46 @@ false }` - **the app never claims a message was actually delivered unless it was
 item-received, sale-proposal, approval-decision, invoice-generated, payment-reminder,
 dispatch-scheduled and delivery-confirmed events.
 
+### Public sign-up and email verification
+Anyone can create an account at **`/register`** (name, email, password):
+
+1. The server emails a **6-digit code** (valid for **10 minutes**) and the user enters it at
+   **`/verify-email`**, together with their password (filled in automatically right after sign-up).
+2. The email is then verified, but the account **cannot sign in yet**: an Admin opens **User
+   Management**, where the account shows as *Pending*, and clicks **Approve** (choosing its role) or
+   **Reject**. Sign-in works only after approval, with the role the Admin chose.
+
+Security details:
+- Only an HMAC of each code is stored (keyed with `JWT_SECRET`); codes are never logged or returned
+  by the API. Each code can be used once and allows **5 attempts**; a new code replaces the old one.
+- **Resend:** at most one code per **60 seconds** and **5 codes per hour** per account. The
+  verification screen shows the countdown.
+- The sign-up, resend and verify responses are the same whether or not an email address is already
+  registered, and signing up with an existing account's email changes nothing and sends nothing.
+- Sign-up is unavailable (HTTP `503`) until an Admin exists - so it can never block first-Admin setup
+  (`/setup`, which still uses `POST /api/auth/register`) - and while no email provider is configured.
+- Per-IP rate limits apply to all three endpoints (see "Sign-in rate limits" in §9).
+
+### Gmail SMTP setup
+1. Use (or create) a Gmail account for the app and turn on **2-Step Verification** for it.
+2. In the Google Account, create an **App Password** (Security → 2-Step Verification → App passwords).
+   Google shows a 16-character password once - use it as `EMAIL_PASS`. Never use the normal Gmail
+   password, and never put it in frontend code, source files or Git.
+3. Set the variables in `backend/.env` locally, and in Render → your service → **Environment**:
+   - `EMAIL_HOST` = `smtp.gmail.com`
+   - `EMAIL_PORT` = `587` (STARTTLS) - or `465` (SSL; the app switches to a secure connection
+     automatically for 465)
+   - `EMAIL_USER` = the Gmail address
+   - `EMAIL_PASS` = the App Password
+   - `EMAIL_FROM` = e.g. `HR Warehouse <the same Gmail address>`
+4. Restart/redeploy the backend, then sign up with a test address and check that the code arrives
+   (also check the spam folder).
+
+Gmail limits how many messages a normal account can send per day; for larger volumes use a
+transactional email provider with SMTP access instead (same five variables). If codes do not arrive
+on Render, check the service logs for SMTP connection errors - some hosting plans restrict outbound
+SMTP connections.
+
 ---
 
 ## 9. Cloud Deployment
@@ -355,7 +399,8 @@ Already covered in §2. Same credentials for local and deployed backend.
 2. In Render, "New +" → "Web Service" → connect the repo, set **Root Directory** to `backend`.
 3. Build command: `npm install`. Start command: `npm start`.
 4. Add all the environment variables from §3 (`MONGO_URI`, `JWT_SECRET`, `JWT_RESET_SECRET`,
-   `CLOUDINARY_*`, `FRONTEND_URL` set to your Vercel frontend URL, optional email/WhatsApp vars).
+   `CLOUDINARY_*`, `FRONTEND_URL` set to your Vercel frontend URL, the `EMAIL_*` variables - required
+   for public sign-up, see "Gmail SMTP setup" in §8 - and optional WhatsApp vars).
 5. Render provides a health check path - use `/api/health`.
 6. Set `TRUST_PROXY=1` (Render runs one proxy in front of a single web service). See "Sign-in rate
    limits" below before changing it.
@@ -392,6 +437,9 @@ The unauthenticated auth endpoints are rate limited (HTTP `429` with a `Retry-Af
 | `POST /api/auth/login` | 5 failed attempts per IP + email, and 50 failed attempts per IP, per 15 minutes. A successful login clears that IP + email counter. |
 | `POST /api/auth/forgot-password` | 5 requests per IP per 15 minutes. Also 3 per email address per hour - beyond that the usual "If that account exists..." response is returned but no email is sent (same response for registered and unknown addresses). |
 | `POST /api/auth/register` (first-Admin setup) | 10 requests per IP per 15 minutes. |
+| `POST /api/auth/signup` (public sign-up) | 10 requests per IP per hour. |
+| `POST /api/auth/verify-email` | 20 requests per IP per 15 minutes (and 5 attempts per code). |
+| `POST /api/auth/resend-verification` | 10 requests per IP per 15 minutes (and 1 code per 60 s, 5 per hour, per account). |
 
 - **Client IP and `TRUST_PROXY`:** limits are keyed by the client IP. Behind Render's proxy the real IP
   is only in `X-Forwarded-For`, so set `TRUST_PROXY` to the number of proxies in front of the app

@@ -14,9 +14,12 @@ const nodemailer = require('nodemailer');
 
 let transporter = null;
 if (emailConfigured) {
+  const port = Number(process.env.EMAIL_PORT) || 587;
   transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
-    port: Number(process.env.EMAIL_PORT) || 587,
+    port,
+    // Port 465 (e.g. Gmail SSL) uses implicit TLS; 587 upgrades with STARTTLS.
+    secure: port === 465,
     auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
   });
 }

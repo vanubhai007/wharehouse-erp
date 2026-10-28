@@ -4,6 +4,7 @@ const ApiError = require('../utils/ApiError');
 const { recordAudit } = require('../utils/audit');
 const { getPagination, buildPaginatedResult } = require('../utils/paginate');
 const { searchRegex } = require('../utils/searchRegex');
+const { ALL_ROLES } = require('../config/constants');
 
 const listUsers = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPagination(req.query);
@@ -86,4 +87,37 @@ const deactivateUser = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'User deactivated' });
 });
 
-module.exports = { listUsers, createUser, getUser, updateUser, resetUserPassword, deactivateUser };
+// Public sign-ups: an Admin approves (choosing the role) or rejects them.
+// Only verified accounts awaiting a decision (or previously rejected) qualify.
+async function findPublicSignup(id) {
+  const user = await User.findById(id);
+  if (!user) throw ApiError.notFound('User not found');
+  if (user.signupSource !== 'public' || !['pending', 'rejected'].includes(user.approvalStatus)) {
+    throw ApiError.badRequest('This account is not awaiting approval.');
+  }
+  return user;
+}
+
+const approveUser = asyncHandler(async (req, res) => {
+  const { role } = req.body;
+  if (!ALL_ROLES.includes(role)) throw ApiError.badRequest('Choose a valid role for this account.');
+  const user = await findPublicSignup(req.params.id);
+  if (user.emailVerified === false) throw ApiError.badRequest('This account has not verified its email address yet.');
+  const before = { role: user.role, approvalStatus: user.approvalStatus };
+  user.role = role;
+  user.approvalStatus = 'approved';
+  user.isActive = true;
+  await user.save();
+  await recordAudit({ entityType: 'User', entityId: user._id, action: 'APPROVE_SIGNUP', user: req.user, fromValue: before, toValue: { role, approvalStatus: 'approved' } });
+  res.json({ success: true, data: user.toSafeJSON() });
+});
+
+const rejectUser = asyncHandler(async (req, res) => {
+  const user = await findPublicSignup(req.params.id);
+  user.approvalStatus = 'rejected';
+  await user.save();
+  await recordAudit({ entityType: 'User', entityId: user._id, action: 'REJECT_SIGNUP', user: req.user });
+  res.json({ success: true, data: user.toSafeJSON() });
+});
+
+module.exports = { listUsers, createUser, getUser, updateUser, resetUserPassword, deactivateUser, approveUser, rejectUser };

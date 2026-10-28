@@ -3,6 +3,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const User = require('../models/User');
 const { fingerprintMatches } = require('../utils/passwordFingerprint');
+const { signInBlock } = require('../utils/accountStatus');
 
 // Verifies the JWT and attaches req.user (without password hash).
 const protect = asyncHandler(async (req, res, next) => {
@@ -23,6 +24,10 @@ const protect = asyncHandler(async (req, res, next) => {
   if (!user || !user.isActive) {
     throw ApiError.unauthorized('User account not found or disabled');
   }
+  // Public sign-ups are never issued a token before verification and
+  // approval; this also rejects any token for such an account.
+  const blocked = signInBlock(user);
+  if (blocked) throw new ApiError(403, blocked.message, { code: blocked.code });
 
   // The token must carry the fingerprint of the user's current password hash,
   // so tokens issued before a password change/reset (or without one) are
