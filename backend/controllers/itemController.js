@@ -6,26 +6,43 @@ const ApiError = require('../utils/ApiError');
 const { recordAudit } = require('../utils/audit');
 const { generateItemId } = require('../utils/idGenerator');
 const { getPagination, buildPaginatedResult } = require('../utils/paginate');
+const { searchRegex } = require('../utils/searchRegex');
 const { mapUploadedFiles } = require('../utils/fileMapper');
 const { sanitizeFileRefs } = require('../utils/fileRefs');
 const { generateItemQr } = require('../services/qrService');
 const { getItemCostSheet } = require('../services/costService');
 const { ITEM_STATUS_TRANSITIONS, ITEM_STATUS } = require('../config/constants');
 const { isTransitionAllowed } = require('../utils/statusTransition');
-const { Parser: CsvParser } = require('json2csv');
+const Settings = require('../models/Settings');
+const { generateTablePdf, assertPdfRowLimit, formatINR, formatDateIST } = require('../services/pdfService');
 
 const ITEM_FILE_FIELDS = { photos: 'items', documents: 'items' };
 
-const listItems = asyncHandler(async (req, res) => {
-  const { page, limit, skip } = getPagination(req.query);
+// Optional ?ids=<id>,<id>,... limits the result to those items (the
+// "Download Selected" PDF). Capped so the request URL stays short; owner and
+// other filters are not capped here - the PDF's 2,000-row limit applies.
+const MAX_SELECTED_IDS = 200;
+
+function parseSelectedIds(value) {
+  const ids = [...new Set(String(value).split(',').map((s) => s.trim()).filter(Boolean))];
+  if (ids.length === 0) throw ApiError.badRequest('No items selected.');
+  if (ids.length > MAX_SELECTED_IDS) throw ApiError.badRequest(`Select at most ${MAX_SELECTED_IDS} items for one PDF.`);
+  if (!ids.every((id) => /^[a-f\d]{24}$/i.test(id))) throw ApiError.badRequest('Invalid item selection.');
+  return ids;
+}
+
+// Builds the inventory list query from its filters. Shared by the list and
+// the PDF export so both always return the same items.
+async function buildItemFilter(query) {
   const filter = { isArchived: false };
-  if (req.query.status) filter.status = req.query.status;
-  if (req.query.category) filter.category = req.query.category;
-  if (req.query.owner) filter.owner = req.query.owner;
-  if (req.query.currentLocation) filter.currentLocation = req.query.currentLocation;
-  if (req.query.includeArchived === 'true') delete filter.isArchived;
-  if (req.query.search) {
-    const term = new RegExp(req.query.search, 'i');
+  if (query.ids !== undefined) filter._id = { $in: parseSelectedIds(query.ids) };
+  if (query.status) filter.status = query.status;
+  if (query.category) filter.category = query.category;
+  if (query.owner) filter.owner = query.owner;
+  if (query.currentLocation) filter.currentLocation = query.currentLocation;
+  if (query.includeArchived === 'true') delete filter.isArchived;
+  if (query.search) {
+    const term = searchRegex(query.search);
     const or = [{ name: term }, { sku: term }, { itemId: term }, { serialNumber: term }];
     // Owner is a reference, not a text field on Item itself - resolve
     // matching Customer/Owner records first so searching by owner name
@@ -34,12 +51,19 @@ const listItems = asyncHandler(async (req, res) => {
     if (matchingOwners.length > 0) or.push({ owner: { $in: matchingOwners.map((o) => o._id) } });
     filter.$or = or;
   }
+  return filter;
+}
+
+const listItems = asyncHandler(async (req, res) => {
+  const { page, limit, skip } = getPagination(req.query);
+  const filter = await buildItemFilter(req.query);
 
   const [items, total] = await Promise.all([
     Item.find(filter)
       .populate('owner', 'customerId name businessName')
       .populate('currentLocation', 'code zone')
-      .sort({ createdAt: -1 })
+      // _id breaks createdAt ties so pages never overlap or skip records.
+      .sort({ createdAt: -1, _id: -1 })
       .skip(skip)
       .limit(limit),
     Item.countDocuments(filter),
@@ -205,25 +229,73 @@ const getHistory = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { statusHistory: item.statusHistory, locationHistory: item.locationHistory } });
 });
 
-const exportCsv = asyncHandler(async (req, res) => {
-  const items = await Item.find({ isArchived: false }).populate('owner', 'name businessName customerId').lean();
-  const rows = items.map((i) => ({
-    itemId: i.itemId,
-    name: i.name,
-    sku: i.sku,
-    category: i.category,
-    owner: i.owner ? (i.owner.businessName || i.owner.name) : '',
-    status: i.status,
-    purchaseCost: i.purchaseCost,
-    estimatedResaleValue: i.estimatedResaleValue,
-    receivedDate: i.receivedDate,
-    condition: i.condition,
-  }));
-  const parser = new CsvParser();
-  const csv = parser.parse(rows);
-  res.header('Content-Type', 'text/csv');
-  res.attachment('inventory-export.csv');
-  res.send(csv);
+// Inventory list as a PDF: the same filters and order as the list (all
+// matching items, not just one page), with the list's and former CSV export's columns.
+const exportPdf = asyncHandler(async (req, res) => {
+  const filter = await buildItemFilter(req.query);
+  await assertPdfRowLimit(Item, filter);
+  const items = await Item.find(filter)
+    .populate('owner', 'customerId name businessName')
+    .populate('currentLocation', 'code zone')
+    .sort({ createdAt: -1 });
+
+  const filters = [];
+  if (req.query.ids !== undefined) {
+    filters.push({ label: 'Selected items', value: items.length === 1 ? items[0].itemId : `${items.length} selected` });
+  }
+  if (req.query.search) filters.push({ label: 'Search', value: `"${req.query.search}"` });
+  if (req.query.status) filters.push({ label: 'Status', value: req.query.status });
+  if (req.query.category) filters.push({ label: 'Category', value: req.query.category });
+  if (req.query.owner) {
+    const owner = await Customer.findById(req.query.owner, 'name businessName');
+    filters.push({ label: 'Owner', value: owner ? owner.businessName || owner.name : req.query.owner });
+  }
+  if (req.query.currentLocation) {
+    const location = await WarehouseLocation.findById(req.query.currentLocation, 'code');
+    filters.push({ label: 'Location', value: location ? location.code : req.query.currentLocation });
+  }
+  if (req.query.includeArchived === 'true') filters.push({ label: 'Archived items', value: 'Included' });
+
+  const sum = (pick) => items.reduce((s, i) => s + (pick(i) || 0), 0);
+  const settings = await Settings.getSettings();
+  await generateTablePdf(res, {
+    title: 'Inventory',
+    filenameBase: 'inventory',
+    settings,
+    filters,
+    columns: [
+      { key: 'itemId', label: 'Item ID', minWidth: 55 },
+      { key: 'name', label: 'Name', weight: 2.4, minWidth: 95 },
+      { key: 'sku', label: 'SKU', minWidth: 50 },
+      { key: 'category', label: 'Category', weight: 1.2, minWidth: 60 },
+      { key: 'owner', label: 'Owner', weight: 1.8, minWidth: 80 },
+      { key: 'status', label: 'Status', weight: 1.2, minWidth: 65 },
+      { key: 'location', label: 'Location', minWidth: 55 },
+      { key: 'condition', label: 'Condition', minWidth: 55 },
+      { key: 'receivedDate', label: 'Received', minWidth: 60 },
+      { key: 'purchaseCost', label: 'Purchase Cost', weight: 1.3, minWidth: 70, align: 'right' },
+      { key: 'resaleValue', label: 'Est. Resale Value', weight: 1.3, minWidth: 70, align: 'right' },
+    ],
+    rows: items.map((i) => ({
+      itemId: i.itemId,
+      name: i.name,
+      sku: i.sku || '-',
+      category: i.category,
+      owner: i.owner ? i.owner.businessName || i.owner.name : '-',
+      status: i.status,
+      location: i.currentLocation?.code || '-',
+      condition: i.condition || '-',
+      receivedDate: formatDateIST(i.receivedDate),
+      purchaseCost: formatINR(i.purchaseCost),
+      resaleValue: i.estimatedResaleValue == null ? '-' : formatINR(i.estimatedResaleValue),
+    })),
+    totalsRow: {
+      itemId: 'Total',
+      purchaseCost: formatINR(sum((i) => i.purchaseCost)),
+      resaleValue: formatINR(sum((i) => i.estimatedResaleValue)),
+    },
+    summary: [{ label: 'Items', value: String(items.length) }],
+  });
 });
 
 module.exports = {
@@ -238,5 +310,5 @@ module.exports = {
   removeMedia,
   getCostSheet,
   getHistory,
-  exportCsv,
+  exportPdf,
 };

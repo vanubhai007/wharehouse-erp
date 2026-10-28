@@ -8,6 +8,7 @@ const ApiError = require('../utils/ApiError');
 const { recordAudit } = require('../utils/audit');
 const { generateCustomerId } = require('../utils/idGenerator');
 const { getPagination, buildPaginatedResult } = require('../utils/paginate');
+const { searchRegex } = require('../utils/searchRegex');
 const { mapUploadedFiles } = require('../utils/fileMapper');
 const { sanitizeFileRefs } = require('../utils/fileRefs');
 
@@ -19,16 +20,18 @@ const listCustomers = asyncHandler(async (req, res) => {
   if (req.query.customerType) filter.customerType = req.query.customerType;
   if (req.query.isActive !== undefined) filter.isActive = req.query.isActive === 'true';
   if (req.query.search) {
+    const term = searchRegex(req.query.search);
     filter.$or = [
-      { name: new RegExp(req.query.search, 'i') },
-      { businessName: new RegExp(req.query.search, 'i') },
-      { phone: new RegExp(req.query.search, 'i') },
-      { email: new RegExp(req.query.search, 'i') },
-      { customerId: new RegExp(req.query.search, 'i') },
+      { name: term },
+      { businessName: term },
+      { phone: term },
+      { email: term },
+      { customerId: term },
     ];
   }
   const [items, total] = await Promise.all([
-    Customer.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    // _id breaks createdAt ties so pages never overlap or skip records.
+    Customer.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(limit),
     Customer.countDocuments(filter),
   ]);
   res.json({ success: true, ...buildPaginatedResult(items, total, page, limit) });

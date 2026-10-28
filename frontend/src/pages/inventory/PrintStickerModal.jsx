@@ -1,46 +1,27 @@
-import { useEffect, useState } from 'react';
-import QRCode from 'qrcode';
+import { useState } from 'react';
 import Modal from '../../components/common/Modal';
 import PricingFormModal from './PricingFormModal';
 import Sticker from '../stickers/Sticker';
 import '../stickers/Sticker.css';
 
 // Prints a sticker for an EXISTING inventory item only - there is no
-// separate Sticker Generator page. Every field (product name, Product ID,
-// MRP, HR Mart Price) is read live from the item record, never typed or
-// invented here, and the QR always encodes this item's own stable, already
-// generated lookup URL (the same one stored in item.qrCodeUrl at item
-// creation by backend/services/qrService.js) - never random/session data.
+// separate Sticker Generator page. Every printed field (Product ID, MRP,
+// HR Mart Price) is read live from the item record, never typed or
+// invented here. The sticker carries no QR code; the item's own QR
+// (item.qrCodeUrl) stays available on the item detail page.
 export default function PrintStickerModal({ item, onClose, onItemUpdated }) {
   const [localItem, setLocalItem] = useState(item);
   const [copies, setCopies] = useState(1);
   const [pricingModal, setPricingModal] = useState(false);
-  const [fallbackQr, setFallbackQr] = useState(null);
 
   const missingMrp = localItem.mrp == null;
   const missingHrPrice = localItem.hrMartPrice == null;
   const missingPrice = missingMrp || missingHrPrice;
-  const qrSrc = localItem.qrCodeUrl || fallbackQr;
-
-  useEffect(() => {
-    if (!localItem.qrCodeUrl && !fallbackQr) {
-      // Legacy item saved before QR generation existed on create: build one
-      // locally using the SAME established item-lookup URL pattern the
-      // backend uses, not a random or temporary value.
-      const target = `${window.location.origin}/inventory/${localItem._id}`;
-      QRCode.toDataURL(target, { width: 400, margin: 1 })
-        .then(setFallbackQr)
-        .catch(() => {});
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localItem._id, localItem.qrCodeUrl]);
 
   const row = {
-    productName: localItem.name,
     productId: localItem.itemId,
     mrp: localItem.mrp,
     hrMartPrice: localItem.hrMartPrice,
-    qrDataUrl: qrSrc,
   };
 
   function handlePrint() {

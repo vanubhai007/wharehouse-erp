@@ -1,5 +1,6 @@
 const request = require('supertest');
 const { startTestDb, stopTestDb } = require('./testUtils');
+const { resetRateLimits } = require('../middleware/rateLimit');
 const { ROLES, ALL_ROLES } = require('../config/constants');
 
 let app;
@@ -38,6 +39,9 @@ const OPERATIONAL_CARDS = [
   'pendingApprovals',
   'totalSales',
 ];
+
+// This file sends more PDF exports per user than the per-minute limit allows.
+beforeEach(() => resetRateLimits());
 
 beforeAll(async () => {
   await startTestDb();
@@ -81,13 +85,13 @@ describe('report access by role', () => {
     for (const allowedRoles of Object.values(REPORT_ENDPOINTS)) expect(allowedRoles).toContain(ROLES.ADMIN);
   });
 
-  test('CSV export is blocked for roles without access and allowed for roles with access', async () => {
-    const denied = await request(app).get('/api/reports/expenses?format=csv').set('Authorization', `Bearer ${tokens[ROLES.WAREHOUSE_STAFF]}`);
+  test('PDF export is blocked for roles without access and allowed for roles with access', async () => {
+    const denied = await request(app).get('/api/reports/expenses?format=pdf').set('Authorization', `Bearer ${tokens[ROLES.WAREHOUSE_STAFF]}`);
     expect(denied.status).toBe(403);
 
-    const allowed = await request(app).get('/api/reports/expenses?format=csv').set('Authorization', `Bearer ${tokens[ROLES.ACCOUNTS]}`);
+    const allowed = await request(app).get('/api/reports/expenses?format=pdf').set('Authorization', `Bearer ${tokens[ROLES.ACCOUNTS]}`);
     expect(allowed.status).toBe(200);
-    expect(allowed.headers['content-type']).toMatch(/text\/csv/);
+    expect(allowed.headers['content-type']).toMatch(/application\/pdf/);
   });
 
   test('reports and dashboard reject unauthenticated requests', async () => {

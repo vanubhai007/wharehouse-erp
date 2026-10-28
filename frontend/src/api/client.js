@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { withReadableDownloadError } from './downloadError';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -30,7 +31,12 @@ export function apiErrorMessage(err) {
 // with the auth header attached, since a plain <a href> to a protected API
 // route would not carry the Authorization header.
 export async function downloadAuthenticated(path, filename, mode = 'download') {
-  const res = await client.get(path, { responseType: 'blob' });
+  let res;
+  try {
+    res = await client.get(path, { responseType: 'blob' });
+  } catch (err) {
+    throw await withReadableDownloadError(err);
+  }
   const blobUrl = window.URL.createObjectURL(res.data);
   if (mode === 'view') {
     window.open(blobUrl, '_blank');

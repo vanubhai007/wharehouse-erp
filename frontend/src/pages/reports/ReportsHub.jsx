@@ -19,8 +19,9 @@ const REPORT_ROLES = {
 
 const REPORTS = [
   {
-    key: 'inventory', label: 'Current Inventory', path: '/reports/inventory', fetch: reportApi.inventory, csv: true,
+    key: 'inventory', label: 'Current Inventory', path: '/reports/inventory', fetch: reportApi.inventory,
     roles: REPORT_ROLES.operational,
+    pdfName: 'current-inventory-report',
     columns: [
       { header: 'Item ID', cell: (r) => r.itemId },
       { header: 'Name', cell: (r) => r.name },
@@ -31,8 +32,9 @@ const REPORTS = [
     ],
   },
   {
-    key: 'cost-sheet', label: 'Item-wise Cost Sheet', path: '/reports/cost-sheet', fetch: reportApi.costSheet, csv: true,
+    key: 'cost-sheet', label: 'Item-wise Cost Sheet', path: '/reports/cost-sheet', fetch: reportApi.costSheet,
     roles: REPORT_ROLES.costs,
+    pdfName: 'item-wise-cost-sheet',
     rows: (data) => data,
     columns: [
       { header: 'Item', cell: (r) => `${r.item.itemId} - ${r.item.name}` },
@@ -45,8 +47,9 @@ const REPORTS = [
     ],
   },
   {
-    key: 'expenses', label: 'Expense Report', path: '/reports/expenses', fetch: reportApi.expenses, csv: true,
+    key: 'expenses', label: 'Expense Report', path: '/reports/expenses', fetch: reportApi.expenses,
     roles: REPORT_ROLES.costs,
+    pdfName: 'expense-report',
     rows: (data) => data.expenses,
     columns: [
       { header: 'Date', cell: (r) => formatDate(r.date) },
@@ -60,6 +63,7 @@ const REPORTS = [
   {
     key: 'refurbishment', label: 'Refurbishment Report', path: '/reports/refurbishment', fetch: reportApi.refurbishment,
     roles: REPORT_ROLES.operational,
+    pdfName: 'refurbishment-report',
     columns: [
       { header: 'Item', cell: (r) => r.item?.itemId },
       { header: 'Work', cell: (r) => r.workDescription },
@@ -69,8 +73,9 @@ const REPORTS = [
     ],
   },
   {
-    key: 'sales', label: 'Sales Report', path: '/reports/sales', fetch: reportApi.sales, csv: true,
+    key: 'sales', label: 'Sales Report', path: '/reports/sales', fetch: reportApi.sales,
     roles: REPORT_ROLES.sales,
+    pdfName: 'sales-report',
     rows: (data) => data.proposals,
     columns: [
       { header: 'Proposal #', cell: (r) => r.proposalNumber },
@@ -84,6 +89,7 @@ const REPORTS = [
   {
     key: 'pending-approvals', label: 'Pending Approvals', path: '/reports/pending-approvals', fetch: reportApi.pendingApprovals,
     roles: REPORT_ROLES.operational,
+    pdfName: 'pending-approvals',
     columns: [
       { header: 'Proposal #', cell: (r) => r.saleProposal?.proposalNumber },
       { header: 'Requested', cell: (r) => formatDate(r.requestedAt) },
@@ -91,8 +97,9 @@ const REPORTS = [
     ],
   },
   {
-    key: 'outstanding', label: 'Outstanding Payments', path: '/reports/outstanding-payments', fetch: reportApi.outstandingPayments, csv: true,
+    key: 'outstanding', label: 'Outstanding Payments', path: '/reports/outstanding-payments', fetch: reportApi.outstandingPayments,
     roles: REPORT_ROLES.finance,
+    pdfName: 'outstanding-payments',
     rows: (data) => data.invoices,
     columns: [
       { header: 'Invoice #', cell: (r) => r.invoiceNumber },
@@ -106,6 +113,7 @@ const REPORTS = [
   {
     key: 'settlements', label: 'Commission & Settlement', path: '/reports/settlements', fetch: reportApi.settlements,
     roles: REPORT_ROLES.finance,
+    pdfName: 'commission-settlement-report',
     rows: (data) => data.settlements,
     columns: [
       { header: 'Item', cell: (r) => r.item?.itemId },
@@ -118,6 +126,7 @@ const REPORTS = [
   {
     key: 'dispatch', label: 'Dispatch Report', path: '/reports/dispatch', fetch: reportApi.dispatch,
     roles: REPORT_ROLES.operational,
+    pdfName: 'dispatch-report',
     columns: [
       { header: 'Dispatch #', cell: (r) => r.dispatchNumber },
       { header: 'Item', cell: (r) => r.item?.itemId },
@@ -128,6 +137,7 @@ const REPORTS = [
   {
     key: 'audit', label: 'Audit / Activity Log', path: '/reports/audit', fetch: reportApi.audit,
     roles: REPORT_ROLES.audit,
+    pdfName: 'audit-activity-log',
     columns: [
       { header: 'When', cell: (r) => formatDate(r.createdAt) },
       { header: 'Entity', cell: (r) => r.entityType },
@@ -144,6 +154,7 @@ export default function ReportsHub() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [downloading, setDownloading] = useState(false);
 
   function load() {
     setLoading(true);
@@ -156,11 +167,16 @@ export default function ReportsHub() {
   }
   useEffect(load, [active]);
 
-  async function handleExport() {
+  async function handleDownloadPdf() {
+    setDownloading(true);
     try {
-      await downloadAuthenticated(reportApi.csvPath(active.path), `${active.key}.csv`);
+      // Report PDFs are dated in IST, matching the date printed inside them.
+      const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+      await downloadAuthenticated(reportApi.pdfPath(active.path), `${active.pdfName}-${day}.pdf`);
     } catch (err) {
       alert(apiErrorMessage(err));
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -170,9 +186,9 @@ export default function ReportsHub() {
     <div className="page">
       <div className="page-header">
         <h1>Reports</h1>
-        {active.csv && (
-          <button className="btn btn-secondary" onClick={handleExport}>Export CSV</button>
-        )}
+        <button className="btn btn-secondary" onClick={handleDownloadPdf} disabled={downloading}>
+          {downloading ? 'Preparing PDF...' : 'Download PDF'}
+        </button>
       </div>
 
       <div className="toolbar" style={{ flexWrap: 'wrap' }}>
@@ -200,3 +216,6 @@ export default function ReportsHub() {
     </div>
   );
 }
+
+
+

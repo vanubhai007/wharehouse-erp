@@ -3,6 +3,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { recordAudit } = require('../utils/audit');
 const { getPagination, buildPaginatedResult } = require('../utils/paginate');
+const { searchRegex } = require('../utils/searchRegex');
 
 const listUsers = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPagination(req.query);
@@ -10,9 +11,10 @@ const listUsers = asyncHandler(async (req, res) => {
   if (req.query.role) filter.role = req.query.role;
   if (req.query.isActive !== undefined) filter.isActive = req.query.isActive === 'true';
   if (req.query.search) {
+    const term = searchRegex(req.query.search);
     filter.$or = [
-      { name: new RegExp(req.query.search, 'i') },
-      { email: new RegExp(req.query.search, 'i') },
+      { name: term },
+      { email: term },
     ];
   }
   const [items, total] = await Promise.all([

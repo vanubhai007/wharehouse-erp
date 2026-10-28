@@ -5,16 +5,18 @@ const ApiError = require('../utils/ApiError');
 const { recordAudit } = require('../utils/audit');
 const { generateBuyerId } = require('../utils/idGenerator');
 const { getPagination, buildPaginatedResult } = require('../utils/paginate');
+const { searchRegex } = require('../utils/searchRegex');
 const { BUYER_ENQUIRY_STATUS } = require('../config/constants');
 
 const listBuyers = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPagination(req.query);
   const filter = {};
   if (req.query.search) {
+    const term = searchRegex(req.query.search);
     filter.$or = [
-      { name: new RegExp(req.query.search, 'i') },
-      { businessName: new RegExp(req.query.search, 'i') },
-      { phone: new RegExp(req.query.search, 'i') },
+      { name: term },
+      { businessName: term },
+      { phone: term },
     ];
   }
   const [items, total] = await Promise.all([
@@ -58,13 +60,14 @@ const listEnquiries = asyncHandler(async (req, res) => {
   if (req.query.status) filter.status = req.query.status;
   if (req.query.priority) filter.priority = req.query.priority;
   if (req.query.search) {
+    const term = searchRegex(req.query.search);
     filter.$or = [
-      { buyerName: new RegExp(req.query.search, 'i') },
-      { companyName: new RegExp(req.query.search, 'i') },
-      { phone: new RegExp(req.query.search, 'i') },
-      { email: new RegExp(req.query.search, 'i') },
-      { productName: new RegExp(req.query.search, 'i') },
-      { productId: new RegExp(req.query.search, 'i') },
+      { buyerName: term },
+      { companyName: term },
+      { phone: term },
+      { email: term },
+      { productName: term },
+      { productId: term },
     ];
   }
 

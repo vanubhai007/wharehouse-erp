@@ -63,7 +63,10 @@ export const itemApi = {
   history: (id) => client.get(`/items/${id}/history`),
   addMedia: (id, formData) => client.post(`/items/${id}/media`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   removeMedia: (id, fileId) => client.delete(`/items/${id}/media/${fileId}`),
-  exportCsvPath: () => '/items/export/csv',
+  exportPdfPath: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return qs ? `/items/export/pdf?${qs}` : '/items/export/pdf';
+  },
 };
 
 export const warehouseApi = {
@@ -150,8 +153,8 @@ export const reportApi = {
   settlements: (params) => client.get('/reports/settlements', { params }),
   dispatch: (params) => client.get('/reports/dispatch', { params }),
   audit: (params) => client.get('/reports/audit', { params }),
-  csvPath: (path, params) => {
-    const qs = new URLSearchParams({ ...params, format: 'csv' }).toString();
+  pdfPath: (path, params) => {
+    const qs = new URLSearchParams({ ...params, format: 'pdf' }).toString();
     return `${path}?${qs}`;
   },
 };

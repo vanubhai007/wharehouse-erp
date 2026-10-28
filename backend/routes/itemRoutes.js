@@ -4,6 +4,7 @@ const validate = require('../middleware/validate');
 const { itemValidator, statusChangeValidator } = require('../validators/itemValidators');
 const { protect, authorize } = require('../middleware/auth');
 const { upload, folder, requireCloudinary } = require('../middleware/upload');
+const { limitPdfExport } = require('../middleware/rateLimit');
 const { ROLES } = require('../config/constants');
 
 const router = express.Router();
@@ -12,7 +13,7 @@ router.use(protect);
 const canManage = authorize(ROLES.ADMIN, ROLES.WAREHOUSE_MANAGER, ROLES.WAREHOUSE_STAFF);
 
 router.get('/', ctrl.listItems);
-router.get('/export/csv', ctrl.exportCsv);
+router.get('/export/pdf', limitPdfExport(ctrl.exportPdf));
 router.post('/', canManage, itemValidator, validate, ctrl.createItem);
 router.get('/:id', ctrl.getItem);
 router.put('/:id', canManage, ctrl.updateItem);

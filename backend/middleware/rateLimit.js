@@ -2,7 +2,8 @@ const net = require('net');
 const ApiError = require('../utils/ApiError');
 
 // In-memory, fixed-window rate limiting for the unauthenticated auth
-// endpoints (login, forgot-password, first-admin setup). Counters live in
+// endpoints (login, forgot-password, first-admin setup), plus per-user limits
+// and a concurrency limit for PDF report exports. Counters live in
 // this process only: they reset when the server restarts and are not shared
 // between instances - running more than one instance needs a shared store.
 
@@ -159,6 +160,58 @@ function allowResetEmail(email) {
   return forgotPasswordPerEmail.hit(normalizeEmail(email));
 }
 
+// PDF exports: at most 10 per signed-in user per minute, and at most 2 being
+// built at once across the server. A slot is held for the whole export (row
+// count, data fetch, render, send) and freed only when the handler has
+// finished - successfully or not. A dropped connection does not free it while
+// the render is still running. Requests refused because the server is busy
+// do not count towards the user's limit.
+const MAX_CONCURRENT_PDF_EXPORTS = 2;
+const PDF_BUSY_RETRY_SECONDS = 5;
+const pdfExportsPerUser = new FixedWindowCounter({ windowMs: MINUTE, max: 10 });
+let pdfExportsInProgress = 0;
+
+// Wraps a PDF export handler (one that returns a promise settling when it has
+// finished, as asyncHandler does). `when` limits the checks to PDF requests
+// on routes that also serve JSON.
+function limitPdfExport(handler, { when = () => true } = {}) {
+  return (req, res, next) => {
+    if (!when(req)) return handler(req, res, next);
+    const key = String(req.user._id);
+    if (pdfExportsPerUser.isLimited(key)) {
+      return next(tooManyRequests(res, pdfExportsPerUser.retryAfterSeconds(key), 'Too many PDF exports.'));
+    }
+    if (pdfExportsInProgress >= MAX_CONCURRENT_PDF_EXPORTS) {
+      res.set('Retry-After', String(PDF_BUSY_RETRY_SECONDS));
+      return next(new ApiError(503, 'The server is busy creating other PDF reports. Please try again in a few seconds.'));
+    }
+    pdfExportsPerUser.hit(key);
+    pdfExportsInProgress += 1;
+    let released = false;
+    const release = () => {
+      if (!released) {
+        released = true;
+        pdfExportsInProgress -= 1;
+      }
+    };
+    try {
+      return Promise.resolve(handler(req, res, next)).then(release, (err) => {
+        release();
+        next(err);
+      });
+    } catch (err) {
+      release();
+      return next(err);
+    }
+  };
+}
+
+// Report routes serve JSON by default and a PDF with ?format=pdf; only the
+// PDF requests are limited.
+const limitReportPdfExport = (handler) => limitPdfExport(handler, { when: (req) => req.query.format === 'pdf' });
+
+const pdfExportsInProgressCount = () => pdfExportsInProgress;
+
 // Test helpers: clear every counter, and replace the clock (null restores it).
 function resetRateLimits() {
   for (const counter of counters) counter.entries.clear();
@@ -173,6 +226,9 @@ module.exports = {
   forgotPasswordIpLimiter,
   setupLimiter,
   allowResetEmail,
+  limitPdfExport,
+  limitReportPdfExport,
+  pdfExportsInProgressCount,
   parseTrustProxy,
   clientKey,
   FixedWindowCounter,

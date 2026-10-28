@@ -158,38 +158,493 @@ function generateDispatchNotePdf(res, dispatch, item, settings) {
   doc.end();
 }
 
-function generateInventoryReportPdf(res, items, settings) {
-  const doc = streamPdf(res, 'inventory-report.pdf');
-  drawHeader(doc, settings, 'INVENTORY REPORT');
-  doc.fontSize(9).text(`Generated: ${new Date().toLocaleString()} | Total items: ${items.length}`, 50, 140);
+// ---------------------------------------------------------------------------
+// Shared table report renderer (used for report PDFs). Reports are
+// English-only and use the built-in Helvetica fonts, like the invoice,
+// receipt and dispatch-note PDFs above (which are separate and unchanged).
+//
+// Layout is done here, not by pdfkit's line wrapper: every string is drawn
+// with lineBreak:false at a computed position, so pages only start where this
+// code decides (rows never spill onto stray pages). The PDF is rendered into
+// memory first and only then sent, so a rendering error never leaves a
+// half-written response; rendering yields to the event loop as it goes.
+// ---------------------------------------------------------------------------
 
-  drawTable(
-    doc,
-    165,
-    [
-      { key: 'itemId', label: 'Item ID', width: 80 },
-      { key: 'name', label: 'Name', width: 140 },
-      { key: 'owner', label: 'Owner', width: 110 },
-      { key: 'status', label: 'Status', width: 100 },
-      { key: 'purchaseCost', label: 'Cost', width: 65, align: 'right' },
-    ],
-    items.map((i) => ({
-      itemId: i.itemId,
-      name: i.name,
-      owner: i.owner ? i.owner.businessName || i.owner.name : '',
-      status: i.status,
-      purchaseCost: money(i.purchaseCost),
-    }))
-  );
+const ApiError = require('../utils/ApiError');
 
-  drawFooter(doc, `${settings.companyName} | This is a system-generated report.`);
+// Largest report that can be exported as a PDF. Larger exports are refused
+// (HTTP 413) - never cut short - so the user narrows the filters instead.
+const MAX_REPORT_ROWS = 2000;
+const YIELD_EVERY_ROWS = 100;
+const REPORT_TIME_ZONE = 'Asia/Kolkata';
+const BRAND_COLOR = '#1a3d7c';
+const FONT = 'Helvetica';
+const FONT_BOLD = 'Helvetica-Bold';
+// Table font sizes, largest first: a smaller size is used only when amount
+// columns would otherwise not fit on one line.
+const TABLE_FONT_SIZES = [8.5, 8, 7.5];
+// Display limits for header text (the underlying values are not changed).
+const FILTER_DISPLAY_MAX = 120;
+const DETAIL_DISPLAY_MAX = 200;
+// Per point of font size: baseline below the top of a line (Helvetica's
+// bounding box is 0.931 above / 0.225 below the baseline) and line pitch.
+const BASELINE_OFFSET = 0.95;
+const LINE_HEIGHT = 1.25;
+
+// The built-in fonts can only draw the WinAnsi character set. In the PDF, ₹ is
+// written as "Rs." and any other character - e.g. Gujarati or Hindi text
+// stored in a record - is shown as "?". Stored data is never changed.
+const WIN_ANSI_EXTRA = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
+const UNSUPPORTED_CHARS = new RegExp(`[^\\n\\x20-\\x7e\\xa0-\\xff${WIN_ANSI_EXTRA}]`, 'gu');
+
+function toReportText(value) {
+  return String(value ?? '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\t/g, ' ')
+    .replace(/₹\s*/g, 'Rs. ')
+    .replace(UNSUPPORTED_CHARS, '?');
+}
+
+// Shortens text for display only, marking the cut with "…".
+function truncateForDisplay(value, max) {
+  const text = String(value ?? '');
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+const yieldToEventLoop = () => new Promise((resolve) => setImmediate(resolve));
+
+// Indian digit grouping with the "Rs." prefix, e.g. Rs. 1,23,456.50.
+function formatINR(amount) {
+  const number = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(amount || 0));
+  return `Rs. ${number}`;
+}
+
+function formatDateTimeIST(date) {
+  const text = new Intl.DateTimeFormat('en-IN', {
+    timeZone: REPORT_TIME_ZONE,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
+  return `${text} IST`;
+}
+
+// Date only, in IST, e.g. "22 Oct 2026"; "-" when there is no date.
+function formatDateIST(date) {
+  if (!date) return '-';
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return String(date);
+  return new Intl.DateTimeFormat('en-IN', { timeZone: REPORT_TIME_ZONE, day: '2-digit', month: 'short', year: 'numeric' }).format(d);
+}
+
+function reportFilename(base, date) {
+  const slug = String(base || 'report').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'report';
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: REPORT_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+  return `${slug}-${day}.pdf`;
+}
+
+// Text helpers bound to one document.
+function createTextKit(doc, fontSize) {
+  const fontFor = (bold) => (bold ? FONT_BOLD : FONT);
+  const width = (text, bold, size) => doc.font(fontFor(bold)).fontSize(size).widthOfString(text);
+
+  // Wraps text into lines no wider than maxWidth, breaking at spaces; a word
+  // longer than a whole line is split between characters.
+  function wrap(value, maxWidth, { bold = false, size = fontSize } = {}) {
+    const lines = [];
+    for (const paragraph of toReportText(value).split('\n')) {
+      let line = '';
+      for (const word of paragraph.split(' ').filter(Boolean)) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (width(candidate, bold, size) <= maxWidth) {
+          line = candidate;
+          continue;
+        }
+        if (line) lines.push(line);
+        line = '';
+        if (width(word, bold, size) <= maxWidth) {
+          line = word;
+          continue;
+        }
+        for (const ch of word) {
+          if (line && width(line + ch, bold, size) > maxWidth) {
+            lines.push(line);
+            line = '';
+          }
+          line += ch;
+        }
+      }
+      lines.push(line);
+    }
+    return lines;
+  }
+
+  // Draws one line with its top at `top`, aligned within [x, x + boxWidth].
+  function drawLine(text, x, top, boxWidth, { align = 'left', bold = false, size = fontSize, color = '#000000' } = {}) {
+    const lineWidth = width(text, bold, size);
+    let left = x;
+    if (align === 'right') left = x + boxWidth - lineWidth;
+    else if (align === 'center') left = x + (boxWidth - lineWidth) / 2;
+    doc.fillColor(color).font(fontFor(bold)).fontSize(size)
+      .text(text, left, top + BASELINE_OFFSET * size, { lineBreak: false, baseline: 'alphabetic' });
+  }
+
+  const lineHeight = (size = fontSize) => LINE_HEIGHT * size;
+
+  // Width of the widest line of `value` drawn without wrapping.
+  const measure = (value, bold = false, size = fontSize) =>
+    Math.max(0, ...toReportText(value).split('\n').map((line) => width(line, bold, size)));
+
+  // A single line no wider than maxWidth, shortened with "…" when needed.
+  function fitWithEllipsis(value, maxWidth, { bold = false, size = fontSize } = {}) {
+    let text = toReportText(value).replace(/\n/g, ' ');
+    if (width(text, bold, size) <= maxWidth) return text;
+    while (text.length > 0 && width(`${text}…`, bold, size) > maxWidth) text = text.slice(0, -1);
+    return `${text.trimEnd()}…`;
+  }
+
+  return { wrap, drawLine, lineHeight, measure, fitWithEllipsis };
+}
+
+// Column widths: share the width by weight and honour minimum widths. `needs`
+// raises a column's minimum to fit its widest value (amount columns) when the
+// page has room for all of them; otherwise the declared minimums apply, and
+// if even those do not fit everything shrinks proportionally (never drop a column).
+function columnWidths(columns, available, needs = []) {
+  const declared = columns.map((c) => c.minWidth || 40);
+  const fitted = declared.map((m, i) => Math.max(m, needs[i] || 0));
+  const mins = fitted.reduce((a, b) => a + b, 0) <= available ? fitted : declared;
+  const minTotal = mins.reduce((a, b) => a + b, 0);
+  if (minTotal >= available) return mins.map((m) => (m / minTotal) * available);
+
+  const weights = columns.map((c) => c.weight || 1);
+  const widths = new Array(columns.length).fill(0);
+  let free = columns.map((_, i) => i);
+  let remaining = available;
+  for (;;) {
+    const weightTotal = free.reduce((a, i) => a + weights[i], 0);
+    const below = free.filter((i) => (remaining * weights[i]) / weightTotal < mins[i]);
+    if (below.length === 0) {
+      free.forEach((i) => { widths[i] = (remaining * weights[i]) / weightTotal; });
+      return widths;
+    }
+    below.forEach((i) => {
+      widths[i] = mins[i];
+      remaining -= mins[i];
+    });
+    free = free.filter((i) => !below.includes(i));
+  }
+}
+
+// Picks the table font size: the largest size at which every amount column
+// fits its widest value on one line (text widths scale with the font size).
+// If amounts cannot fit even at the smallest size, the default size is kept
+// and amounts wrap as before. `widest` is measured at the default size.
+function pickTableFont(columns, available, widest, isAmount, padding) {
+  const declared = columns.map((c) => c.minWidth || 40);
+  const needsAt = (size) => widest.map((w, i) => (isAmount[i] ? Math.ceil((w * size) / TABLE_FONT_SIZES[0] + padding) : 0));
+  for (const size of TABLE_FONT_SIZES) {
+    const needs = needsAt(size);
+    if (declared.reduce((s, m, i) => s + Math.max(m, needs[i]), 0) <= available) return { size, needs };
+  }
+  return { size: TABLE_FONT_SIZES[0], needs: needsAt(TABLE_FONT_SIZES[0]) };
+}
+
+function tooManyRowsError(count, max = MAX_REPORT_ROWS) {
+  const n = (v) => v.toLocaleString('en-IN');
+  return new ApiError(413, `This report has ${n(count)} matching records, more than the ${n(max)} that can be exported as a PDF. Narrow the filters (for example the date range or status) and try again.`);
+}
+
+// Counts the records a PDF export would include, before they are fetched, and
+// refuses the export (HTTP 413) when there are more than MAX_REPORT_ROWS.
+async function assertPdfRowLimit(Model, filter) {
+  const count = await Model.countDocuments(filter);
+  if (count > MAX_REPORT_ROWS) throw tooManyRowsError(count);
+}
+
+/**
+ * Renders a branded, multi-page English table report into memory.
+ * `rows` and `totalsRow` hold display-ready values keyed by column key.
+ * Sets no headers and writes nothing; resolves to { buffer, filename, layout }.
+ */
+async function renderTablePdf(options) {
+  const {
+    title,
+    filenameBase,
+    settings = {},
+    filters = [],
+    columns,
+    rows = [],
+    totalsRow = null,
+    summary = [],
+    generatedAt = new Date(),
+    maxRows = MAX_REPORT_ROWS,
+  } = options;
+  // Backstop for records added between the row count and the fetch.
+  if (rows.length > maxRows) throw tooManyRowsError(rows.length, maxRows);
+
+  const MARGIN = 40;
+  const FOOTER_SPACE = 26;
+  const BODY = TABLE_FONT_SIZES[0];
+  const PAD_X = 4;
+  const PAD_Y = 3;
+
+  const minTotal = columns.reduce((a, c) => a + (c.minWidth || 40), 0);
+  const orientation = minTotal > 595.28 - 2 * MARGIN ? 'landscape' : 'portrait';
+  const companyName = settings.companyName || 'HR Warehouse';
+
+  const doc = new PDFDocument({
+    size: 'A4',
+    layout: orientation,
+    margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN },
+    bufferPages: true,
+    info: { Title: toReportText(title), Author: toReportText(companyName), Creator: 'HR Warehouse ERP' },
+  });
+  const chunks = [];
+  doc.on('data', (chunk) => chunks.push(chunk));
+  const finished = new Promise((resolve, reject) => {
+    doc.on('end', resolve);
+    doc.on('error', reject);
+  });
+
+  const kit = createTextKit(doc, BODY);
+  const contentWidth = doc.page.width - 2 * MARGIN;
+  const bottomLimit = () => doc.page.height - MARGIN - FOOTER_SPACE;
+
+  const shownRows = rows;
+
+  // Amount columns (right-aligned, unless noWrap: false) are kept on one line
+  // where the page allows: measure their widest value, totals in bold.
+  const isAmount = columns.map((c) => c.noWrap ?? c.align === 'right');
+  const widest = columns.map((c, i) => (isAmount[i] && totalsRow ? kit.measure(totalsRow[c.key], true) : 0));
+  for (let r = 0; r < shownRows.length; r += 1) {
+    columns.forEach((c, i) => {
+      if (isAmount[i]) widest[i] = Math.max(widest[i], kit.measure(shownRows[r][c.key]));
+    });
+    if (r % 500 === 499) await yieldToEventLoop();
+  }
+  const { size: tableSize, needs } = pickTableFont(columns, contentWidth, widest, isAmount, 2 * PAD_X + 1);
+  const widths = columnWidths(columns, contentWidth, needs);
+  const lh = kit.lineHeight(tableSize);
+
+  let y = MARGIN;
+  let maxTextBottom = 0;
+  let rowsOnPage = 0;
+
+  // Draws wrapped text in a box and returns the height used.
+  function block(text, x, top, boxWidth, opts = {}) {
+    const size = opts.size || BODY;
+    const lines = kit.wrap(text, boxWidth, { bold: opts.bold, size });
+    lines.forEach((line, i) => kit.drawLine(line, x, top + i * kit.lineHeight(size), boxWidth, { ...opts, size }));
+    const height = lines.length * kit.lineHeight(size);
+    maxTextBottom = Math.max(maxTextBottom, top + height);
+    return height;
+  }
+
+  function firstPageHeader() {
+    const leftWidth = contentWidth * 0.55;
+    const rightWidth = contentWidth - leftWidth - 10;
+    let left = MARGIN;
+    left += block(truncateForDisplay(companyName, DETAIL_DISPLAY_MAX), MARGIN, left, leftWidth, { bold: true, size: 15, color: BRAND_COLOR });
+    const details = [
+      settings.companyAddress,
+      settings.companyGstin && `GSTIN: ${settings.companyGstin}`,
+      settings.companyPhone && `Phone: ${settings.companyPhone}`,
+      settings.companyEmail && `Email: ${settings.companyEmail}`,
+    ].filter(Boolean);
+    details.forEach((line) => { left += block(truncateForDisplay(line, DETAIL_DISPLAY_MAX), MARGIN, left, leftWidth, { color: '#444444' }); });
+
+    const rightX = MARGIN + leftWidth + 10;
+    let right = MARGIN;
+    right += block(title, rightX, right, rightWidth, { bold: true, size: 14, align: 'right', color: BRAND_COLOR });
+    right += block(`Generated: ${formatDateTimeIST(generatedAt)}`, rightX, right + 2, rightWidth, { align: 'right', color: '#444444' }) + 2;
+
+    y = Math.max(left, right) + 8;
+    if (filters.length) {
+      const text = filters.map((f) => `${f.label} = ${truncateForDisplay(f.value, FILTER_DISPLAY_MAX)}`).join('; ');
+      y += block(`Filters: ${text}`, MARGIN, y, contentWidth, { color: '#444444' }) + 2;
+    }
+    doc.moveTo(MARGIN, y).lineTo(MARGIN + contentWidth, y).lineWidth(1).strokeColor(BRAND_COLOR).stroke();
+    y += 8;
+  }
+
+  function continuationHeader() {
+    y = MARGIN;
+    y += block(`${title} (continued)`, MARGIN, y, contentWidth, { bold: true, size: 10, color: BRAND_COLOR }) + 4;
+  }
+
+  function tableHeader() {
+    const cells = columns.map((c, i) => kit.wrap(c.label, widths[i] - 2 * PAD_X, { bold: true, size: tableSize }));
+    const height = Math.max(...cells.map((l) => l.length)) * lh + 2 * PAD_Y;
+    doc.rect(MARGIN, y, contentWidth, height).fill(BRAND_COLOR);
+    let x = MARGIN;
+    cells.forEach((lines, i) => {
+      lines.forEach((line, n) => kit.drawLine(line, x + PAD_X, y + PAD_Y + n * lh, widths[i] - 2 * PAD_X, { align: columns[i].align, bold: true, size: tableSize, color: '#ffffff' }));
+      x += widths[i];
+    });
+    maxTextBottom = Math.max(maxTextBottom, y + height);
+    y += height;
+  }
+
+  // New page for continuing the table (title plus repeated column headers).
+  function newPage() {
+    doc.addPage();
+    rowsOnPage = 0;
+    continuationHeader();
+    tableHeader();
+  }
+
+  function drawRowSlice(cellLines, height, { fill, bold, topBorder } = {}) {
+    if (fill) doc.rect(MARGIN, y, contentWidth, height).fill(fill);
+    let x = MARGIN;
+    cellLines.forEach((lines, i) => {
+      lines.forEach((line, n) => kit.drawLine(line, x + PAD_X, y + PAD_Y + n * lh, widths[i] - 2 * PAD_X, { align: columns[i].align, bold, size: tableSize }));
+      doc.rect(x, y, widths[i], height).lineWidth(0.5).strokeColor('#d0d7e2').stroke();
+      x += widths[i];
+    });
+    if (topBorder) doc.moveTo(MARGIN, y).lineTo(MARGIN + contentWidth, y).lineWidth(1).strokeColor(BRAND_COLOR).stroke();
+    maxTextBottom = Math.max(maxTextBottom, y + height);
+    y += height;
+    rowsOnPage += 1;
+  }
+
+  const wrapCells = (values, bold) => columns.map((c, i) => kit.wrap(values[c.key], widths[i] - 2 * PAD_X, { bold, size: tableSize }));
+
+  // Draws one row; a row taller than the space left moves to a new page, and
+  // a row taller than a whole page is split across pages without losing text.
+  function drawRow(values, style = {}) {
+    let remaining = wrapCells(values, style.bold);
+    let freshPage = false;
+    for (;;) {
+      const needed = Math.max(1, ...remaining.map((l) => l.length));
+      let fitLines = Math.floor((bottomLimit() - y - 2 * PAD_Y) / lh);
+      if (needed <= fitLines) {
+        drawRowSlice(remaining, needed * lh + 2 * PAD_Y, style);
+        return;
+      }
+      const freshPageLines = Math.floor((bottomLimit() - MARGIN - 60 - 2 * PAD_Y) / lh);
+      if (!freshPage && (fitLines < 1 || (rowsOnPage > 0 && needed <= freshPageLines))) {
+        newPage();
+        freshPage = true;
+        continue;
+      }
+      fitLines = Math.max(1, fitLines); // a fresh page always takes at least one line
+      drawRowSlice(remaining.map((l) => l.slice(0, fitLines)), fitLines * lh + 2 * PAD_Y, style);
+      remaining = remaining.map((l) => l.slice(fitLines));
+      newPage();
+      freshPage = true;
+    }
+  }
+
+  firstPageHeader();
+  // A very tall page-1 header (long filters or company details) would leave
+  // little room for the table, so the table then starts on the next page.
+  if (y > MARGIN + (bottomLimit() - MARGIN) / 2) {
+    doc.addPage();
+    continuationHeader();
+  }
+  tableHeader();
+
+  if (shownRows.length === 0) {
+    const height = block('No records match the selected filters.', MARGIN + PAD_X, y + PAD_Y, contentWidth - 2 * PAD_X, { color: '#666666' }) + 2 * PAD_Y;
+    y += height;
+  }
+  for (let i = 0; i < shownRows.length; i += 1) {
+    drawRow(shownRows[i], i % 2 === 1 ? { fill: '#f4f6fa' } : {});
+    if (i % YIELD_EVERY_ROWS === YIELD_EVERY_ROWS - 1) await yieldToEventLoop();
+  }
+
+  // Totals and summary stay together when they fit on one page; a summary too
+  // long for a page continues on the following pages.
+  if (totalsRow || summary.length) {
+    const labelWidth = contentWidth * 0.6 - 8;
+    const valueX = MARGIN + contentWidth * 0.6;
+    const valueWidth = contentWidth * 0.4;
+    const summaryLh = kit.lineHeight(BODY);
+    const entries = summary.map(({ label, value }) => {
+      const labelLines = kit.wrap(label, labelWidth, { bold: true });
+      const valueLines = kit.wrap(value, valueWidth);
+      return { labelLines, valueLines, height: Math.max(labelLines.length, valueLines.length) * summaryLh };
+    });
+    const totalsHeight = totalsRow ? Math.max(1, ...wrapCells(totalsRow, true).map((l) => l.length)) * lh + 2 * PAD_Y : 0;
+    const summaryHeight = entries.length ? 10 + entries.reduce((s, e) => s + e.height, 0) : 0;
+    const freshPageSpace = bottomLimit() - MARGIN - 60;
+    if (y + totalsHeight + summaryHeight > bottomLimit() && totalsHeight + summaryHeight <= freshPageSpace) newPage();
+    if (totalsRow) drawRow(totalsRow, { fill: '#e8edf5', bold: true, topBorder: true });
+    if (entries.length) y += 10;
+    for (const entry of entries) {
+      if (y + entry.height > bottomLimit()) {
+        doc.addPage();
+        rowsOnPage = 0;
+        continuationHeader();
+      }
+      entry.labelLines.forEach((line, n) => kit.drawLine(line, MARGIN, y + n * summaryLh, labelWidth, { bold: true }));
+      entry.valueLines.forEach((line, n) => kit.drawLine(line, valueX, y + n * summaryLh, valueWidth, { align: 'right' }));
+      y += entry.height;
+      maxTextBottom = Math.max(maxTextBottom, y);
+    }
+  }
+
+  // Footer on every page, added once the page count is known. The bottom
+  // margin is lifted while drawing so the footer can never start a new page,
+  // and the company text is shortened so it never reaches the page number.
+  const range = doc.bufferedPageRange();
+  const footerSize = 7.5;
+  const pageLabelWidth = kit.measure(`Page ${range.count} of ${range.count}`, false, footerSize);
+  const footerTextWidth = contentWidth - pageLabelWidth - 12;
+  const footerText = kit.fitWithEllipsis(`${companyName} | Generated by HR Warehouse ERP`, footerTextWidth, { size: footerSize });
+  for (let i = range.start; i < range.start + range.count; i += 1) {
+    doc.switchToPage(i);
+    const savedBottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    const footerTop = doc.page.height - MARGIN - 12;
+    doc.moveTo(MARGIN, footerTop - 4).lineTo(MARGIN + contentWidth, footerTop - 4).lineWidth(0.5).strokeColor('#d0d7e2').stroke();
+    kit.drawLine(footerText, MARGIN, footerTop, footerTextWidth, { size: footerSize, color: '#888888' });
+    kit.drawLine(`Page ${i - range.start + 1} of ${range.count}`, MARGIN, footerTop, contentWidth, { align: 'right', size: footerSize, color: '#888888' });
+    doc.page.margins.bottom = savedBottom;
+  }
+
+  const layout = {
+    pages: range.count,
+    orientation,
+    rowsRendered: shownRows.length,
+    totalRows: rows.length,
+    tableFontSize: tableSize,
+    maxTextBottom,
+    contentBottomLimit: doc.page.height - MARGIN - FOOTER_SPACE,
+  };
   doc.end();
+  await finished;
+  return { buffer: Buffer.concat(chunks), filename: reportFilename(filenameBase || title, generatedAt), layout };
+}
+
+/**
+ * Sends a table report as a PDF download. The PDF is fully rendered before
+ * any header is set, so a rendering error rejects without touching `res`.
+ * Resolves to the layout summary (pages, orientation, rows rendered, ...).
+ */
+async function generateTablePdf(res, options) {
+  const { buffer, filename, layout } = await renderTablePdf(options);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Length', buffer.length);
+  res.end(buffer);
+  return layout;
 }
 
 module.exports = {
   generateInvoicePdf,
   generateReceiptPdf,
   generateDispatchNotePdf,
-  generateInventoryReportPdf,
   money,
+  generateTablePdf,
+  renderTablePdf,
+  assertPdfRowLimit,
+  formatINR,
+  formatDateTimeIST,
+  formatDateIST,
+  MAX_REPORT_ROWS,
 };

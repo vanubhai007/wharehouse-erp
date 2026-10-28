@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { itemApi, warehouseApi } from '../../api/endpoints';
-import { apiErrorMessage } from '../../api/client';
+import { apiErrorMessage, downloadAuthenticated } from '../../api/client';
 import { LoadingState, ErrorState } from '../../components/common/States';
 import StatusBadge from '../../components/common/StatusBadge';
 import Modal from '../../components/common/Modal';
@@ -37,6 +37,7 @@ export default function ItemDetail() {
   const [expenseModal, setExpenseModal] = useState(false);
   const [pricingModal, setPricingModal] = useState(false);
   const [stickerModal, setStickerModal] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   function load() {
     setLoading(true);
@@ -78,6 +79,19 @@ export default function ItemDetail() {
     navigate('/inventory');
   }
 
+  // This one item as an inventory PDF (the same export as the Inventory list).
+  async function handleDownloadPdf() {
+    setExporting(true);
+    try {
+      const path = itemApi.exportPdfPath({ ids: item._id, includeArchived: item.isArchived ? 'true' : '' });
+      await downloadAuthenticated(path, `${item.itemId}.pdf`);
+    } catch (err) {
+      alert(apiErrorMessage(err));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function openMoveModal() {
     warehouseApi.listLocations({ isActive: true }).then((res) => setLocations(res.data.data));
     setMoveModal(true);
@@ -104,6 +118,9 @@ export default function ItemDetail() {
           )}
           <button className="btn btn-secondary" onClick={openMoveModal}>Move Location</button>
           <button className="btn btn-secondary" onClick={() => setStickerModal(true)}>Print Sticker</button>
+          <button className="btn btn-secondary" onClick={handleDownloadPdf} disabled={exporting}>
+            {exporting ? 'Preparing PDF...' : 'Download PDF'}
+          </button>
           {item.status === 'Available for Sale' && (
             <button className="btn btn-secondary" onClick={() => navigate(`/sales?item=${item._id}`)}>Propose Sale</button>
           )}

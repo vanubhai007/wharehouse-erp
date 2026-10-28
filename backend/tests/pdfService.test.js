@@ -1,5 +1,5 @@
 const { PassThrough } = require('stream');
-const { generateInvoicePdf, generateReceiptPdf, generateDispatchNotePdf, generateInventoryReportPdf } = require('../services/pdfService');
+const { generateInvoicePdf, generateReceiptPdf, generateDispatchNotePdf } = require('../services/pdfService');
 
 // Minimal fake Express response: a writable stream with the headers API
 // pdfService expects (setHeader/header/attachment), so we can exercise the
@@ -72,13 +72,6 @@ describe('pdfService', () => {
     };
     const item = { itemId: 'ITM-00001', name: 'Industrial Air Compressor' };
     generateDispatchNotePdf(res, dispatch, item, settings);
-    const buffer = await res.getBuffer();
-    expect(buffer.subarray(0, 4).toString('ascii')).toBe('%PDF');
-  });
-
-  test('generateInventoryReportPdf handles an empty item list without crashing', async () => {
-    const res = fakeResponse();
-    generateInventoryReportPdf(res, [], settings);
     const buffer = await res.getBuffer();
     expect(buffer.subarray(0, 4).toString('ascii')).toBe('%PDF');
   });

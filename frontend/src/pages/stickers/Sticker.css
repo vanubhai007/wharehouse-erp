@@ -23,82 +23,63 @@
   top: 0;
 }
 
+/* Three lines (Product ID, MRP, HR Mart Price): labels in the left column,
+   values right-aligned in the right column, spread evenly down the sticker
+   inside a 3mm margin. Sizes are physical (mm) so print matches the preview;
+   all text is pure black so it stays sharp on thermal label printers. */
 .sticker {
   width: 80mm;
   height: 40mm;
   border: 1px solid #999;
   box-sizing: border-box;
-  padding: 2mm 3mm;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  padding: 3mm;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-content: space-evenly;
+  align-items: baseline;
   font-family: Arial, Helvetica, sans-serif;
   background: #fff;
   color: #000;
   overflow: hidden;
 }
 
-.sticker-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 2mm;
-}
-
-.sticker-name {
-  font-size: 3.2mm;
+.sticker-label {
+  padding-right: 3mm;
+  font-size: 2.8mm;
   font-weight: 700;
-  line-height: 1.15;
-  max-height: 7.4mm;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  text-overflow: ellipsis;
-  word-break: break-word;
-}
-
-.sticker-qr {
-  width: 9mm;
-  height: 9mm;
-  flex-shrink: 0;
-}
-.sticker-qr img { width: 100%; height: 100%; object-fit: contain; }
-
-.sticker-product-id {
-  font-size: 2.6mm;
-  font-family: 'Courier New', monospace;
-  letter-spacing: 0.3px;
-}
-
-.sticker-prices {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  border-top: 0.3mm solid #000;
-  padding-top: 1mm;
-}
-
-.sticker-mrp {
-  font-size: 2.6mm;
-  color: #444;
-}
-.sticker-mrp .value {
-  text-decoration: line-through;
-}
-
-.sticker-hr-price {
-  text-align: right;
-}
-.sticker-hr-label {
-  font-size: 1.8mm;
+  line-height: 1.2;
   text-transform: uppercase;
-  letter-spacing: 0.2px;
-  color: #444;
+  letter-spacing: 0.15mm;
+  white-space: nowrap;
 }
-.sticker-hr-value {
+
+.sticker-value {
+  min-width: 0;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: right;
+  white-space: nowrap;
+}
+.sticker-value-id,
+.sticker-value-mrp {
   font-size: 4mm;
+}
+.sticker-value-hr {
+  font-size: 5.2mm;
   font-weight: 800;
+}
+/* Last resort when a value does not fit even at the smallest size (see
+   Sticker.jsx): wrap it rather than clip it. */
+.sticker-value-wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Rule above the HR Mart Price line: its own full-width grid row, so it is
+   one straight line however the label and value baselines line up. */
+.sticker-rule {
+  grid-column: 1 / -1;
+  border-top: 0.3mm solid #000;
 }
 
 @media print {
