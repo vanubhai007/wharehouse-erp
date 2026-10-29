@@ -1,0 +1,42 @@
+:root {
+  /* Fixed brand palette — do not add a theme switcher or alternate palettes */
+  --color-black: #111111;
+  --color-yellow: #EFFF00;
+  --color-purple: #8B5CF6;
+  --color-graphite: #242424;
+
+  --color-bg: var(--color-black);
+  --color-surface: var(--color-graphite);
+  --color-accent: var(--color-yellow);
+  --color-accent-2: var(--color-purple);
+  --color-text: #F4F4F4;
+  --color-text-muted: #A8A8A8;
+  --color-border: #333333;
+
+  --font-heading: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Inter', 'Segoe UI', system-ui, sans-serif;
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 24px;
+
+  --shadow-glow-yellow: 0 0 24px rgba(239, 255, 0, 0.25);
+  --shadow-glow-purple: 0 0 24px rgba(139, 92, 246, 0.35);
+
+  --container-width: 1200px;
+  --nav-height: 72px;
+
+  --transition-fast: 150ms ease;
+  --transition-base: 300ms ease;
+  --transition-slow: 600ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  --z-nav: 100;
+  --z-overlay: 200;
+}
+
+/* Respect reduced motion globally; components also check this via JS */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+  }
+}
